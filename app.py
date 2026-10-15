@@ -23,45 +23,6 @@ FINANCIAL_INSTITUTIONS = [
 
 ACCOUNT_TYPES = ["일반위탁", "연금저축", "IRP", "퇴직연금(DC)", "입출금통장"]
 
-# 확장된 실시간 연관 검색 종목 데이터베이스 (종목명: 티커)
-STOCK_SEARCH_DICT = {
-    "삼성전자": "005930.KS",
-    "삼성전자우": "005935.KS",
-    "SK하이닉스": "000660.KS",
-    "LG에너지솔루션": "373220.KS",
-    "현대차": "005380.KS",
-    "NAVER": "035420.KS",
-    "카카오": "035720.KS",
-    "PLUS 고배당주": "161510.KS",
-    "TIGER 미국배당다우존스": "458730.KS",
-    "TIGER 미국나스닥100": "133690.KS",
-    "TIGER 미국S&P500": "360750.KS",
-    "TIGER KRX금현물": "411060.KS",
-    "TIGER 반도체": "091230.KS",
-    "KODEX 200": "069500.KS",
-    "KODEX TDF2050액티브": "431040.KS",
-    "KODEX 미국배당커버드콜액티브": "441640.KS",
-    "KODEX 미국나스닥100": "178260.KS",
-    "KODEX 미국S&P500TR": "379800.KS",
-    "KODEX 미국반도체MV": "390390.KS",
-    "SOL 미국배당다우존스": "446720.KS",
-    "SOL 미국S&P500": "433330.KS",
-    "RISE 머니마켓액티브": "459590.KS",
-    "ACE 미국30년국채액티브(H)": "452250.KS",
-    "엔비디아 (NVIDIA)": "NVDA",
-    "애플 (Apple)": "AAPL",
-    "마이크로소프트 (Microsoft)": "MSFT",
-    "알파벳 A (구글)": "GOOGL",
-    "아마존 (Amazon)": "AMZN",
-    "테슬라 (Tesla)": "TSLA",
-    "메타 (Meta)": "META",
-    "리얼티인컴 (Realty Income)": "O",
-    "SCHD (미국배당다우존스)": "SCHD",
-    "QQQ (나스닥100 ETF)": "QQQ",
-    "VOO (S&P500 ETF)": "VOO",
-    "TLT (미국20년이상국채 ETF)": "TLT"
-}
-
 st.markdown("""
 <style>
     .dashboard-header {
@@ -164,8 +125,46 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 실시간 시세 수집 엔진
+# 2. 전 종목 실시간 연관 검색 및 시세 수집 엔진
 # =====================================================================
+def search_naver_stock(query: str):
+    """
+    네이버 증권 자동완성 API를 연동하여 상장된 모든 주식/ETF 검색
+    """
+    if not query or len(query.strip()) < 1:
+        return {}
+        
+    url = "https://ac.finance.naver.com/ac"
+    params = {
+        'q': query,
+        'target': 'index,stock,etf,fn',
+        'r_format': 'json',
+        'r_enc': 'utf-8',
+        'st': '111',
+        'r_lt': '111'
+    }
+    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
+    
+    results = {}
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get('items', [])
+            if items and len(items) > 0 and len(items[0]) > 0:
+                for item in items[0]:
+                    stock_name = item[0][0] # 종목명
+                    stock_code = item[1][0] # 종목코드 (6자리)
+                    market_type = item[2][0] if len(item) > 2 else "" # 시장 구분 (KOSPI/KOSDAQ)
+                    
+                    suffix = ".KQ" if market_type.upper() == "KOSDAQ" else ".KS"
+                    full_ticker = f"{stock_code}{suffix}"
+                    results[f"{stock_name} ({stock_code})"] = (stock_name, full_ticker)
+    except Exception:
+        pass
+        
+    return results
+
 @st.cache_data(ttl=30)
 def fetch_realtime_market_data(ticker_list: tuple):
     price_data = {}
@@ -178,9 +177,7 @@ def fetch_realtime_market_data(ticker_list: tuple):
     except Exception:
         usd_krw = 1350.0
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
 
     for symbol in set(ticker_list):
         if not symbol or symbol == "-":
@@ -272,7 +269,7 @@ total_profit = total_eval - total_buy
 total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 
 # =====================================================================
-# 4. 사이드바 - 연관 검색형 종목 등록
+# 4. 사이드바 - 전 종목 실시간 연관 검색 등록
 # =====================================================================
 with st.sidebar:
     st.header("⚙️ 포트폴리오 설정")
@@ -310,44 +307,48 @@ with st.sidebar:
                 st.success(f"'{del_acc_target}' 삭제 완료!")
                 st.rerun()
 
-    # [핵심] 연관 검색형 종목 선택 모듈
-    with st.expander("📌 연관 종목 검색 및 추가", expanded=True):
+    # [핵심] 네이버 증권 API 실시간 연관 검색창
+    with st.expander("📌 전체 ETF / 주식 실시간 검색 및 추가", expanded=True):
         if not st.session_state.account_list:
             st.warning("먼저 계좌를 신규 등록해 주세요.")
         else:
+            in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
+            
+            # 실시간 검색 키워드 입력
+            search_input = st.text_input("ETF/주식 검색어 입력 (예: KODEX, TIGER, 미국, 200, SCHD)", "KODEX")
+            
+            # 네이버 증권 실시간 검색 실행
+            search_dict = search_naver_stock(search_input)
+            
+            if search_dict:
+                selected_label = st.selectbox("검색된 종목 선택", options=list(search_dict.keys()))
+                final_name, final_ticker = search_dict[selected_label]
+            else:
+                st.info("💡 실시간 검색 결과가 없거나 해외주식/티커 직접 입력")
+                final_name = st.text_input("종목명 직접 입력", search_input)
+                final_ticker = st.text_input("티커/코드 직접 입력 (예: SCHD, NVDA, 069500.KS)", "")
+
+            st.caption(f"최종 매핑 티커: **{final_ticker if final_ticker else '미입력'}**")
+            
             with st.form("add_item_form"):
-                in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
-                
-                # 연관 검색 드롭다운 옵션 (목록 + 직접입력 지원)
-                search_options = ["🔍 [직접 입력]"] + list(STOCK_SEARCH_DICT.keys())
-                selected_stock_name = st.selectbox("종목 연관 검색 (입력 시 관련 종목 자동 필터링)", options=search_options)
-                
-                if selected_stock_name == "🔍 [직접 입력]":
-                    final_stock_name = st.text_input("종목명 직접 입력 (예: 삼성전자)", "")
-                    final_ticker = st.text_input("티커/코드 직접 입력 (예: 005930.KS, NVDA)", "")
-                else:
-                    final_stock_name = selected_stock_name
-                    final_ticker = STOCK_SEARCH_DICT[selected_stock_name]
-                    st.info(f"매핑 티커: **{final_ticker}**")
-                
                 in_qty = st.number_input("수량", min_value=1, value=10)
                 in_avg = st.number_input("평단가(원)", min_value=0, value=10000)
                 in_div = st.number_input("누적 배당금(원)", min_value=0, value=0)
                 
                 if st.form_submit_button("➕ 보유 종목 저장", use_container_width=True):
-                    if not final_stock_name.strip() or not final_ticker.strip():
-                        st.error("종목명과 티커를 모두 입력해 주세요.")
+                    if not final_name.strip() or not final_ticker.strip():
+                        st.error("종목명과 티커가 모두 설정되어야 합니다.")
                     else:
                         buy_amt = in_qty * in_avg
                         new_row = pd.DataFrame([{
-                            "종목명": final_stock_name.strip(), "티커": final_ticker.strip(), "계좌": in_acc,
+                            "종목명": final_name.strip(), "티커": final_ticker.strip(), "계좌": in_acc,
                             "수량": in_qty, "평단가": in_avg, "현재가": in_avg,
                             "매수금액": buy_amt, "평가금액": buy_amt,
                             "손익": 0.0, "수익률": 0.0, "누적배당": in_div
                         }])
                         st.session_state.portfolio_db = pd.concat([st.session_state.portfolio_db, new_row], ignore_index=True)
                         st.cache_data.clear()
-                        st.success(f"'{final_stock_name}' 저장 완료!")
+                        st.success(f"'{final_name}' 저장 완료!")
                         st.rerun()
 
 # =====================================================================
@@ -482,7 +483,7 @@ with tab1:
                     "누적배당": "₩{:,.0f}"
                 }), use_container_width=True)
     else:
-        st.info("등록된 종목이 없습니다. 사이드바의 '📌 연관 종목 검색 및 추가'에서 보유 자산을 추가해 주세요.")
+        st.info("등록된 종목이 없습니다. 사이드바의 '📌 전체 ETF / 주식 실시간 검색 및 추가'에서 종목을 검색하여 추가해 주세요.")
 
 # ---------------------------------------------------------------------
 # [TAB 2] 거래 내역
