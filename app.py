@@ -8,60 +8,115 @@ import re
 from datetime import datetime, timedelta
 
 # =====================================================================
-# 1. 페이지 설정 및 PENSION TREE 스타일 CSS
+# 1. 페이지 설정 및 다크모드 대응 반응형 CSS
 # =====================================================================
 st.set_page_config(
-    page_title="PENSION TREE - 자산 & 연금 관리",
-    page_icon="🌱",
+    page_title="개인 금융자산 포트폴리오 대시보드",
+    page_icon="📈",
     layout="wide"
 )
 
+# 다크 모드 및 라이트 모드 가시성 보장 CSS
 st.markdown("""
 <style>
-    .brand-header {
-        font-size: 24px;
-        font-weight: 800;
-        color: #2ECC71;
-        letter-spacing: 1px;
+    /* 헤더 이미지 및 타이틀 배너 */
+    .dashboard-header {
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+        border-radius: 12px;
+        padding: 24px 32px;
+        color: #FFFFFF !important;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
     }
+    .dashboard-title {
+        font-size: 26px;
+        font-weight: 800;
+        color: #F8FAFC !important;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+    .dashboard-subtitle {
+        font-size: 13px;
+        color: #94A3B8 !important;
+        margin-top: 4px;
+    }
+
+    /* 상단 자산 요약 요약바 */
     .summary-banner {
-        background-color: #F8F9FA;
-        border: 1px solid #E9ECEF;
-        border-radius: 8px;
-        padding: 12px 24px;
+        background-color: var(--background-secondary-color, #F8FAFC);
+        border: 1px solid var(--border-color, #E2E8F0);
+        border-radius: 10px;
+        padding: 12px 20px;
         display: flex;
         justify-content: flex-end;
         align-items: center;
         gap: 20px;
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 600;
-        margin-bottom: 25px;
+        color: var(--text-color, #1E293B) !important;
     }
-    .summary-val { color: #212529; font-weight: 700; }
-    .summary-eval { color: #2B6CB0; font-weight: 700; }
-    .summary-profit { color: #E53E3E; font-weight: 700; }
+    .summary-val { font-weight: 700; color: var(--text-color, #0F172A) !important; }
+    .summary-eval { font-weight: 700; color: #3B82F6 !important; }
+    .summary-profit-plus { font-weight: 700; color: #EF4444 !important; }
+    .summary-profit-minus { font-weight: 700; color: #3B82F6 !important; }
 
+    /* 종목 카드 다크모드 가시성 개선 */
     .stock-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
+        background-color: var(--background-secondary-color, #FFFFFF);
+        border: 1px solid var(--border-color, #E2E8F0);
         border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 12px;
+        padding: 14px 16px;
+        margin-bottom: 8px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .stock-title { font-size: 15px; font-weight: 700; color: #1A202C; }
-    .stock-price { font-size: 14px; font-weight: 700; color: #E53E3E; text-align: right; }
-    .card-label { font-size: 11px; color: #718096; }
-    .card-num { font-size: 12px; font-weight: 600; color: #2D3748; }
-    .card-profit-plus { font-size: 12px; font-weight: 700; color: #E53E3E; }
-    .card-profit-minus { font-size: 12px; font-weight: 700; color: #3182CE; }
+    .stock-title { 
+        font-size: 15px; 
+        font-weight: 700; 
+        color: var(--text-color, #0F172A) !important; 
+    }
+    .stock-price { 
+        font-size: 14px; 
+        font-weight: 700; 
+        color: #EF4444 !important; 
+        text-align: right; 
+    }
+    .card-label { 
+        font-size: 11px; 
+        color: var(--text-color-secondary, #64748B) !important; 
+    }
+    .card-num { 
+        font-size: 12px; 
+        font-weight: 600; 
+        color: var(--text-color, #1E293B) !important; 
+    }
+    .card-profit-plus { font-size: 12px; font-weight: 700; color: #EF4444 !important; }
+    .card-profit-minus { font-size: 12px; font-weight: 700; color: #3B82F6 !important; }
+
+    /* 무색 흑백 모노톤 버튼 스타일 */
+    .stButton > button {
+        border-radius: 4px !important;
+        border: 1px solid var(--border-color, #CBD5E1) !important;
+        background-color: transparent !important;
+        color: var(--text-color, #475569) !important;
+        padding: 2px 6px !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+    }
+    .stButton > button:hover {
+        background-color: rgba(148, 163, 184, 0.15) !important;
+        border-color: #94A3B8 !important;
+        color: var(--text-color, #0F172A) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# 비밀번호 설정 (Streamlit Secrets 또는 기본값)
+# 비밀번호 설정
 DASHBOARD_PASSWORD = st.secrets.get("DASHBOARD_PASSWORD", "1234")
 
-# [요구사항 1] 엔터키 로그인 지원을 위한 Form 로그인 구조
+# [요구사항 1] 엔터키(Enter) 로그인 방식을 포함한 암호 체크
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -69,10 +124,9 @@ def check_password():
     if not st.session_state.authenticated:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown("<h2 style='text-align: center; color: #2ECC71;'>🌱 PENSION TREE</h2>", unsafe_allow_html=True)
-            st.caption("비밀번호 입력 후 엔터(Enter) 키를 누르면 바로 접속됩니다.")
+            st.markdown("<h2 style='text-align: center;'>🔒 개인 금융자산 대시보드</h2>", unsafe_allow_html=True)
+            st.caption("비밀번호 입력 후 엔터(Enter) 키를 누르면 로그인됩니다.")
             
-            # st.form으로 감싸서 엔터키 제출 기능 동작
             with st.form("login_form", clear_on_submit=False):
                 pwd_input = st.text_input("비밀번호 입력", type="password", key="password_input")
                 submit_button = st.form_submit_button("로그인", use_container_width=True)
@@ -88,7 +142,7 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 네이버 모바일 API 기반 실시간 시세 수집 엔진
+# 2. 네이버 증권 모바일 API 기반 실시간 시세 수집 모듈
 # =====================================================================
 @st.cache_data(ttl=30)
 def fetch_realtime_market_data(ticker_list: tuple):
@@ -110,6 +164,7 @@ def fetch_realtime_market_data(ticker_list: tuple):
         curr_price = 0.0
         is_usd = not symbol.endswith((".KS", ".KQ"))
         
+        # 한국 주식/ETF: 네이버 모바일 API
         if symbol.endswith((".KS", ".KQ")):
             code = re.sub(r'[^0-9]', '', symbol)
             url = f"https://m.stock.naver.com/api/stock/{code}/basic"
@@ -122,6 +177,7 @@ def fetch_realtime_market_data(ticker_list: tuple):
             except Exception:
                 curr_price = 0.0
 
+        # 미국 주식 및 백업: yfinance
         if curr_price == 0.0:
             try:
                 t = yf.Ticker(symbol)
@@ -141,7 +197,7 @@ def fetch_realtime_market_data(ticker_list: tuple):
     return price_data, usd_krw
 
 # =====================================================================
-# 3. 데이터베이스 및 세션 초기화
+# 3. 데이터베이스 및 세션 상태 초기화
 # =====================================================================
 if "account_list" not in st.session_state:
     st.session_state.account_list = ["미래에셋 DC", "미래에셋 연금저축", "미래에셋 IRP", "신한은행 DC", "KB국민은행 IRP"]
@@ -159,11 +215,10 @@ if "portfolio_db" not in st.session_state:
         {"종목명": "TIGER KRX금현물", "티커": "411060.KS", "계좌": "미래에셋 DC", "수량": 1322, "평단가": 12967, "현재가": 16260, "매수금액": 17142565, "평가금액": 21495720, "손익": 4353155, "수익률": 25.39, "누적배당": 1378}
     ])
 
-# 수정 모달용 세션
 if "editing_stock" not in st.session_state:
     st.session_state.editing_stock = None
 
-# 실시간 시세 반영 및 방어 로직
+# 실시간 주가 반영
 if not st.session_state.portfolio_db.empty:
     tickers = tuple(st.session_state.portfolio_db["티커"].unique())
     realtime_prices, current_usd_krw = fetch_realtime_market_data(tickers)
@@ -199,16 +254,16 @@ total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 # 4. 사이드바 - 관리 메뉴
 # =====================================================================
 with st.sidebar:
-    st.header("⚙️ PENSION TREE 관리")
+    st.header("⚙️ 포트폴리오 설정")
     
-    if st.button("🔄 실시간 시세/환율 즉시 갱신", use_container_width=True):
+    if st.button("🔄 실시간 시세 즉시 갱신", use_container_width=True):
         st.cache_data.clear()
-        st.success("네이버 증권 시세가 즉시 반영되었습니다!")
+        st.success("실시간 시세가 반영되었습니다!")
         st.rerun()
         
     st.markdown("---")
     
-    with st.expander("🏦 계좌 추가 / 삭제"):
+    with st.expander("🏦 계좌 관리 (추가/삭제)"):
         st.subheader("계좌 추가")
         new_acc_name = st.text_input("새 계좌명")
         if st.button("계좌 등록", use_container_width=True):
@@ -251,22 +306,33 @@ with st.sidebar:
                 st.rerun()
 
 # =====================================================================
-# 5. 메인 대시보드 화면
+# 5. [요구사항 2] 헤더 타이틀 및 이미지 변경 ('개인 금융자산 포트폴리오 대시보드')
 # =====================================================================
-col_brand, col_banner = st.columns([1, 3])
-
-with col_brand:
-    st.markdown('<div class="brand-header">🌱 PENSION TREE</div>', unsafe_allow_html=True)
-
-with col_banner:
-    st.markdown(f'''
-    <div class="summary-banner">
-        <div>매수 <span class="summary-val">{total_buy:,.0f}</span></div>
-        <div>평가 <span class="summary-eval">{total_eval:,.0f}</span></div>
-        <div>수익 <span class="summary-profit">{total_profit:+,.0f} ({total_rate:+.2f}%)</span></div>
-        <div style="color:#718096;">↗ 0 (0.00%)</div>
+st.markdown('''
+<div class="dashboard-header">
+    <div>
+        <h1 class="dashboard-title">📈 개인 금융자산 포트폴리오 대시보드</h1>
+        <p class="dashboard-subtitle">실시간 시세 연동 및 계좌별 자산/연금/배당 관리 통합 시스템</p>
     </div>
-    ''', unsafe_allow_html=True)
+</div>
+''', unsafe_allow_html=True)
+
+# 메인 금융 및 모바일 분석 대시보드 배너 이미지
+st.image("https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=1200&q=80", use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# 상단 자산 요약 배너
+profit_style_class = "summary-profit-plus" if total_profit >= 0 else "summary-profit-minus"
+st.markdown(f'''
+<div class="summary-banner">
+    <div>총 매수 <span class="summary-val">{total_buy:,.0f} 원</span></div>
+    <div>총 평가 <span class="summary-eval">{total_eval:,.0f} 원</span></div>
+    <div>총 손익 <span class="{profit_style_class}">{total_profit:+,.0f} 원 ({total_rate:+.2f}%)</span></div>
+</div>
+''', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 종목별 & 계좌별 현황", 
@@ -276,21 +342,18 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (자리이동, 수정, 삭제 버튼 구현)
+# [TAB 1] 종목별 현황 (요구사항 1: 무색 모노톤 상단 컨트롤 버튼)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
     
     if not df.empty:
-        # 고유 종목 리스트 순서 유지
         unique_stocks = list(df["종목명"].unique())
         
-        # 종목 수정 모달/팝업 패널
+        # 종목 수정 폼
         if st.session_state.editing_stock is not None:
             target_stock = st.session_state.editing_stock
-            st.info(f"✏️ **'{target_stock}' 종목 정보 수정 중**")
-            
-            # 해당 종목 데이터 가져오기
+            st.info(f"✏️ **'{target_stock}' 종목 정보 수정**")
             stock_rows = df[df["종목명"] == target_stock]
             first_row = stock_rows.iloc[0]
             
@@ -304,10 +367,8 @@ with tab1:
                 
                 c_btn1, c_btn2 = st.columns(2)
                 with c_btn1:
-                    if st.form_submit_button("수정 내용 저장", use_container_width=True):
-                        # 데이터 업데이트
-                        idx_list = stock_rows.index
-                        for i in idx_list:
+                    if st.form_submit_button("저장", use_container_width=True):
+                        for i in stock_rows.index:
                             st.session_state.portfolio_db.at[i, "종목명"] = e_name
                             st.session_state.portfolio_db.at[i, "티커"] = e_ticker
                             st.session_state.portfolio_db.at[i, "수량"] = e_qty
@@ -319,7 +380,7 @@ with tab1:
                             st.session_state.portfolio_db.at[i, "누적배당"] = e_div
                             
                         st.session_state.editing_stock = None
-                        st.success("수정이 완료되었습니다.")
+                        st.success("수정 완료되었습니다.")
                         st.rerun()
                 with c_btn2:
                     if st.form_submit_button("취소", use_container_width=True):
@@ -327,7 +388,7 @@ with tab1:
                         st.rerun()
             st.markdown("---")
 
-        # [요구사항 2] 4열 카드 배치 + 자리이동/수정/삭제 버튼
+        # 4열 카드 배치
         cols = st.columns(4)
         for idx, name in enumerate(unique_stocks):
             group = df[df["종목명"] == name]
@@ -344,13 +405,45 @@ with tab1:
             profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
             
             with cols[col_idx]:
+                # [요구사항 1] 상단 무색/흑백 모노톤 컨트롤 버튼 패널
+                ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
+                with ctrl1:
+                    if st.button("⬆", key=f"up_{name}", help="위로 이동"):
+                        if idx > 0:
+                            prev_name = unique_stocks[idx-1]
+                            idx_a = df[df["종목명"] == name].index
+                            idx_b = df[df["종목명"] == prev_name].index
+                            new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
+                            st.session_state.portfolio_db = new_df
+                            st.rerun()
+                with ctrl2:
+                    if st.button("⬇", key=f"down_{name}", help="아래로 이동"):
+                        if idx < len(unique_stocks) - 1:
+                            next_name = unique_stocks[idx+1]
+                            idx_a = df[df["종목명"] == name].index
+                            idx_b = df[df["종목명"] == next_name].index
+                            new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
+                            st.session_state.portfolio_db = new_df
+                            st.rerun()
+                with ctrl3:
+                    if st.button("✏", key=f"edit_{name}", help="수정"):
+                        st.session_state.editing_stock = name
+                        st.rerun()
+                with ctrl4:
+                    if st.button("✕", key=f"del_{name}", help="삭제"):
+                        st.session_state.portfolio_db = st.session_state.portfolio_db[
+                            st.session_state.portfolio_db["종목명"] != name
+                        ].reset_index(drop=True)
+                        st.rerun()
+
+                # 종목 카드 내용
                 st.markdown(f'''
                 <div class="stock-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div class="stock-title">{name}</div>
                         <div class="stock-price">{curr_p:,.0f}</div>
                     </div>
-                    <hr style="margin:6px 0; border:none; border-top:1px solid #EDF2F7;">
+                    <hr style="margin:6px 0; border:none; border-top:1px solid rgba(148, 163, 184, 0.2);">
                     <div style="display:flex; justify-content:space-between;">
                         <div><span class="card-label">보유수량</span><br><span class="card-num">{sum_qty:,.0f}주</span></div>
                         <div style="text-align:right;"><span class="card-label">평단가</span><br><span class="card-num">{avg_p:,.0f}</span></div>
@@ -363,46 +456,11 @@ with tab1:
                         <div><span class="card-label">전체 수익금</span><br><span class="{profit_class}">{sum_profit:+,.0f}</span></div>
                         <div style="text-align:right;"><span class="card-label">전체 수익률</span><br><span class="{profit_class}">{rate:+.2f}%</span></div>
                     </div>
-                    <div style="margin-top:4px; text-align:right; font-size:11px; color:#2ECC71; font-weight:600;">
+                    <div style="margin-top:4px; text-align:right; font-size:11px; color:#10B981; font-weight:600;">
                         누적 배당금: ₩{sum_div:,.0f}
                     </div>
                 </div>
                 ''', unsafe_allow_html=True)
-                
-                # [버튼부] 자리이동(위/아래), 수정, 삭제
-                b1, b2, b3, b4 = st.columns(4)
-                with b1:
-                    if st.button("⬆️", key=f"up_{name}", help="위로 이동"):
-                        if idx > 0:
-                            # 순서 스왑
-                            prev_name = unique_stocks[idx-1]
-                            # 데이터프레임 순서 정렬 변경
-                            idx_a = df[df["종목명"] == name].index
-                            idx_b = df[df["종목명"] == prev_name].index
-                            # 재배치 후 세션 반영
-                            new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
-                            st.session_state.portfolio_db = new_df
-                            st.rerun()
-                with b2:
-                    if st.button("⬇️", key=f"down_{name}", help="아래로 이동"):
-                        if idx < len(unique_stocks) - 1:
-                            next_name = unique_stocks[idx+1]
-                            idx_a = df[df["종목명"] == name].index
-                            idx_b = df[df["종목명"] == next_name].index
-                            new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
-                            st.session_state.portfolio_db = new_df
-                            st.rerun()
-                with b3:
-                    if st.button("✏️", key=f"edit_{name}", help="수정"):
-                        st.session_state.editing_stock = name
-                        st.rerun()
-                with b4:
-                    if st.button("🗑️", key=f"del_{name}", help="삭제"):
-                        st.session_state.portfolio_db = st.session_state.portfolio_db[
-                            st.session_state.portfolio_db["종목명"] != name
-                        ].reset_index(drop=True)
-                        st.success(f"'{name}' 종목이 삭제되었습니다.")
-                        st.rerun()
 
         st.markdown("---")
         st.subheader("계좌별 보유현황")
@@ -449,9 +507,9 @@ with tab3:
     df_trend = pd.DataFrame({"날짜": dates, "매수금액": buy_vals, "평가금액": eval_vals, "수익률": rates})
     
     fig_trend = go.Figure()
-    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["매수금액"], name="매수금액", line=dict(color="#2ECC71", width=2)))
-    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["평가금액"], name="평가금액", line=dict(color="#8E44AD", width=2)))
-    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["수익률"], name="수익률(%)", yaxis="y2", line=dict(color="#F1C40F", width=2, dash="dot")))
+    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["매수금액"], name="매수금액", line=dict(color="#10B981", width=2)))
+    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["평가금액"], name="평가금액", line=dict(color="#8B5CF6", width=2)))
+    fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["수익률"], name="수익률(%)", yaxis="y2", line=dict(color="#F59E0B", width=2, dash="dot")))
     
     fig_trend.update_layout(
         yaxis=dict(title="금액 (원)"),
@@ -470,5 +528,5 @@ with tab4:
     m_divs = [200000, 250000, 300000, 280000, 450000, 420000, 430000, 410000, 480000, 500000, 520000, 550000,
               480000, 510000, 530000, 720000, 680000, 650000, 660000, 670000, 850000, 2400000, 1050000, 1800000, 852150]
     
-    fig_div_bar = px.bar(x=m_labels, y=m_divs, labels={'x': '년/월', 'y': '배당 입금액(원)'}, color_discrete_sequence=['#F1C40F'])
+    fig_div_bar = px.bar(x=m_labels, y=m_divs, labels={'x': '년/월', 'y': '배당 입금액(원)'}, color_discrete_sequence=['#F59E0B'])
     st.plotly_chart(fig_div_bar, use_container_width=True)
