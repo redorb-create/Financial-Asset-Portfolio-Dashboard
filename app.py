@@ -136,7 +136,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (Grid Card) & 계좌별 보유현황
+# [TAB 1] 종목별 현황 (Grid Card) & 계좌별 보유현황 (에러 수정 완료)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -152,7 +152,7 @@ with tab1:
     }).reset_index()
     grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
     
-    # 4열 그리드 카드로 종목 현황 배치 (사진 [1] 동일 디자인)
+    # 4열 그리드 카드로 종목 현황 배치
     cols = st.columns(4)
     for idx, row in grouped_stock.iterrows():
         col_idx = idx % 4
@@ -160,7 +160,7 @@ with tab1:
         with cols[col_idx]:
             st.markdown(f'''
             <div class="stock-card">
-                <div style="display:flex; justify-shadow:space-between; align-items:center;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div class="stock-title">{row['종목명']}</div>
                     <div class="stock-price">{row['현재가']:,.0f}</div>
                 </div>
@@ -186,13 +186,18 @@ with tab1:
     st.markdown("---")
     st.subheader("계좌별 보유현황")
     
-    # 계좌별 상세 테이블 (사진 [1] 하단 스타일)
+    # 계좌별 상세 테이블
     for name, group in df.groupby("종목명"):
         with st.expander(f"📦 {name}  |  평가금액: ₩{group['평가금액'].sum():,.0f} ({group['손익'].sum():+,.0f}원)", expanded=True):
             display_g = group[["계좌", "수량", "평단가", "매수금액", "평가금액", "손익", "수익률", "누적배당"]].copy()
             st.dataframe(display_g.style.format({
-                "수량": "{:,.0f}", "평단가": "₩{:,.0f}", "매수금액": "₩{:,.0f}",
-                "평가금액": "₩{:,.0f}", "손익": "₩{:+,0f}", "수익률": "{:+.2f}%", "누적배당": "₩{:,.0f}"
+                "수량": "{:,.0f}", 
+                "평단가": "₩{:,.0f}", 
+                "매수금액": "₩{:,.0f}",
+                "평가금액": "₩{:,.0f}", 
+                "손익": "₩{:+,.0f}",      # <-- 포맷 오타 수정 (+,0f -> +,.0f)
+                "수익률": "{:+.2f}%", 
+                "누적배당": "₩{:,.0f}"
             }), use_container_width=True)
 
 # ---------------------------------------------------------------------
