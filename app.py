@@ -16,23 +16,20 @@ st.set_page_config(
     layout="wide"
 )
 
-# 다크 모드 및 라이트 모드 가시성 보장 CSS
+# 다크 모드 및 라이트 모드 가시성 보장 & 미니 상단 버튼 CSS
 st.markdown("""
 <style>
-    /* 헤더 이미지 및 타이틀 배너 */
+    /* 헤더 타이틀 배너 (이미지 제거 및 간결화) */
     .dashboard-header {
         background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
         border-radius: 12px;
-        padding: 24px 32px;
+        padding: 20px 28px;
         color: #FFFFFF !important;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
         border: 1px solid rgba(255, 255, 255, 0.1);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
     }
     .dashboard-title {
-        font-size: 26px;
+        font-size: 24px;
         font-weight: 800;
         color: #F8FAFC !important;
         margin: 0;
@@ -57,13 +54,14 @@ st.markdown("""
         font-size: 14px;
         font-weight: 600;
         color: var(--text-color, #1E293B) !important;
+        margin-bottom: 16px;
     }
     .summary-val { font-weight: 700; color: var(--text-color, #0F172A) !important; }
     .summary-eval { font-weight: 700; color: #3B82F6 !important; }
     .summary-profit-plus { font-weight: 700; color: #EF4444 !important; }
     .summary-profit-minus { font-weight: 700; color: #3B82F6 !important; }
 
-    /* 종목 카드 다크모드 가시성 개선 */
+    /* 종목 카드 컨테이너 */
     .stock-card {
         background-color: var(--background-secondary-color, #FFFFFF);
         border: 1px solid var(--border-color, #E2E8F0);
@@ -95,18 +93,27 @@ st.markdown("""
     .card-profit-plus { font-size: 12px; font-weight: 700; color: #EF4444 !important; }
     .card-profit-minus { font-size: 12px; font-weight: 700; color: #3B82F6 !important; }
 
-    /* 무색 흑백 모노톤 버튼 스타일 */
-    .stButton > button {
-        border-radius: 4px !important;
+    /* [요구사항 1] 상단 우측 정렬 1/4 미니 컨트롤 버튼 전용 스타일 */
+    .mini-btn-group {
+        display: flex;
+        justify-content: flex-end;
+        gap: 2px;
+        margin-bottom: 4px;
+    }
+    .mini-btn-group .stButton > button {
+        border-radius: 3px !important;
         border: 1px solid var(--border-color, #CBD5E1) !important;
         background-color: transparent !important;
-        color: var(--text-color, #475569) !important;
-        padding: 2px 6px !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
+        color: var(--text-color-secondary, #64748B) !important;
+        padding: 0px 4px !important;
+        font-size: 9px !important;       /* 1/4 크기로 축소 */
+        line-height: 12px !important;
+        height: 18px !important;         /* 버튼 높이 슬림화 */
+        min-height: 18px !important;
+        width: 22px !important;          /* 소형 크기 지정 */
     }
-    .stButton > button:hover {
-        background-color: rgba(148, 163, 184, 0.15) !important;
+    .mini-btn-group .stButton > button:hover {
+        background-color: rgba(148, 163, 184, 0.2) !important;
         border-color: #94A3B8 !important;
         color: var(--text-color, #0F172A) !important;
     }
@@ -116,7 +123,6 @@ st.markdown("""
 # 비밀번호 설정
 DASHBOARD_PASSWORD = st.secrets.get("DASHBOARD_PASSWORD", "1234")
 
-# [요구사항 1] 엔터키(Enter) 로그인 방식을 포함한 암호 체크
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -306,7 +312,7 @@ with st.sidebar:
                 st.rerun()
 
 # =====================================================================
-# 5. [요구사항 2] 헤더 타이틀 및 이미지 변경 ('개인 금융자산 포트폴리오 대시보드')
+# 5. [요구사항 2] 헤더 타이틀 (이미지 제거)
 # =====================================================================
 st.markdown('''
 <div class="dashboard-header">
@@ -316,11 +322,6 @@ st.markdown('''
     </div>
 </div>
 ''', unsafe_allow_html=True)
-
-# 메인 금융 및 모바일 분석 대시보드 배너 이미지
-st.image("https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=1200&q=80", use_container_width=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
 
 # 상단 자산 요약 배너
 profit_style_class = "summary-profit-plus" if total_profit >= 0 else "summary-profit-minus"
@@ -332,8 +333,6 @@ st.markdown(f'''
 </div>
 ''', unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
-
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 종목별 & 계좌별 현황", 
     "📑 거래 내역", 
@@ -342,7 +341,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (요구사항 1: 무색 모노톤 상단 컨트롤 버튼)
+# [TAB 1] 종목별 현황 (요구사항 1: 상단 우측 정렬 1/4 크기 미니 모노톤 버튼)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -405,9 +404,10 @@ with tab1:
             profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
             
             with cols[col_idx]:
-                # [요구사항 1] 상단 무색/흑백 모노톤 컨트롤 버튼 패널
-                ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
-                with ctrl1:
+                # [요구사항 1] 상단 우측 정렬 1/4 크기 미니 버튼 그룹
+                st.markdown('<div class="mini-btn-group">', unsafe_allow_html=True)
+                mb1, mb2, mb3, mb4 = st.columns([1, 1, 1, 1])
+                with mb1:
                     if st.button("⬆", key=f"up_{name}", help="위로 이동"):
                         if idx > 0:
                             prev_name = unique_stocks[idx-1]
@@ -416,7 +416,7 @@ with tab1:
                             new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with ctrl2:
+                with mb2:
                     if st.button("⬇", key=f"down_{name}", help="아래로 이동"):
                         if idx < len(unique_stocks) - 1:
                             next_name = unique_stocks[idx+1]
@@ -425,16 +425,17 @@ with tab1:
                             new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with ctrl3:
+                with mb3:
                     if st.button("✏", key=f"edit_{name}", help="수정"):
                         st.session_state.editing_stock = name
                         st.rerun()
-                with ctrl4:
+                with mb4:
                     if st.button("✕", key=f"del_{name}", help="삭제"):
                         st.session_state.portfolio_db = st.session_state.portfolio_db[
                             st.session_state.portfolio_db["종목명"] != name
                         ].reset_index(drop=True)
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
                 # 종목 카드 내용
                 st.markdown(f'''
