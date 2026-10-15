@@ -46,20 +46,22 @@ st.markdown("""
         border: 1px solid #E2E8F0;
         border-radius: 10px;
         padding: 16px;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .stock-title { font-size: 16px; font-weight: 700; color: #1A202C; }
+    .stock-title { font-size: 15px; font-weight: 700; color: #1A202C; }
     .stock-price { font-size: 14px; font-weight: 700; color: #E53E3E; text-align: right; }
-    .card-label { font-size: 12px; color: #718096; }
-    .card-num { font-size: 13px; font-weight: 600; color: #2D3748; }
-    .card-profit-plus { font-size: 13px; font-weight: 700; color: #E53E3E; }
-    .card-profit-minus { font-size: 13px; font-weight: 700; color: #3182CE; }
+    .card-label { font-size: 11px; color: #718096; }
+    .card-num { font-size: 12px; font-weight: 600; color: #2D3748; }
+    .card-profit-plus { font-size: 12px; font-weight: 700; color: #E53E3E; }
+    .card-profit-minus { font-size: 12px; font-weight: 700; color: #3182CE; }
 </style>
 """, unsafe_allow_html=True)
 
+# 비밀번호 설정 (Streamlit Secrets 또는 기본값)
 DASHBOARD_PASSWORD = st.secrets.get("DASHBOARD_PASSWORD", "1234")
 
+# [요구사항 1] 엔터키 로그인 지원을 위한 Form 로그인 구조
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -68,25 +70,29 @@ def check_password():
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("<h2 style='text-align: center; color: #2ECC71;'>🌱 PENSION TREE</h2>", unsafe_allow_html=True)
-            pwd_input = st.text_input("비밀번호 입력", type="password")
-            if st.button("로그인", use_container_width=True):
-                if pwd_input == DASHBOARD_PASSWORD:
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("비밀번호가 올바르지 않습니다.")
+            st.caption("비밀번호 입력 후 엔터(Enter) 키를 누르면 바로 접속됩니다.")
+            
+            # st.form으로 감싸서 엔터키 제출 기능 동작
+            with st.form("login_form", clear_on_submit=False):
+                pwd_input = st.text_input("비밀번호 입력", type="password", key="password_input")
+                submit_button = st.form_submit_button("로그인", use_container_width=True)
+                
+                if submit_button:
+                    if pwd_input == DASHBOARD_PASSWORD:
+                        st.session_state.authenticated = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 올바르지 않습니다.")
         st.stop()
 
 check_password()
 
 # =====================================================================
-# 2. 네이버 모바일 API 기반 실시간 시세 수집 엔진 (차단 없음)
+# 2. 네이버 모바일 API 기반 실시간 시세 수집 엔진
 # =====================================================================
 @st.cache_data(ttl=30)
 def fetch_realtime_market_data(ticker_list: tuple):
     price_data = {}
-    
-    # 1. USD/KRW 환율 수집
     try:
         usd_krw_ticker = yf.Ticker("KRW=X")
         usd_krw = float(usd_krw_ticker.fast_info.get('lastPrice', 1350.0))
@@ -104,21 +110,18 @@ def fetch_realtime_market_data(ticker_list: tuple):
         curr_price = 0.0
         is_usd = not symbol.endswith((".KS", ".KQ"))
         
-        # [A] 한국 주식/ETF: 네이버 증권 모바일 API 다이렉트 조회
         if symbol.endswith((".KS", ".KQ")):
-            code = re.sub(r'[^0-9]', '', symbol)  # 종목코드 6자리 (예: 178260, 431040)
+            code = re.sub(r'[^0-9]', '', symbol)
             url = f"https://m.stock.naver.com/api/stock/{code}/basic"
             try:
                 res = requests.get(url, headers=headers, timeout=5)
                 if res.status_code == 200:
                     data = res.json()
-                    # 현재가 수집 (comma 제거)
                     price_raw = data.get('nowVal', '0').replace(',', '')
                     curr_price = float(price_raw)
             except Exception:
                 curr_price = 0.0
 
-        # [B] 미국 주식/ETF 및 한국 실패시 yfinance 백업
         if curr_price == 0.0:
             try:
                 t = yf.Ticker(symbol)
@@ -156,7 +159,11 @@ if "portfolio_db" not in st.session_state:
         {"종목명": "TIGER KRX금현물", "티커": "411060.KS", "계좌": "미래에셋 DC", "수량": 1322, "평단가": 12967, "현재가": 16260, "매수금액": 17142565, "평가금액": 21495720, "손익": 4353155, "수익률": 25.39, "누적배당": 1378}
     ])
 
-# 실시간 시세 반영 및 방어 로직 (0원이 넘어와도 평단가로 방어)
+# 수정 모달용 세션
+if "editing_stock" not in st.session_state:
+    st.session_state.editing_stock = None
+
+# 실시간 시세 반영 및 방어 로직
 if not st.session_state.portfolio_db.empty:
     tickers = tuple(st.session_state.portfolio_db["티커"].unique())
     realtime_prices, current_usd_krw = fetch_realtime_market_data(tickers)
@@ -170,7 +177,6 @@ if not st.session_state.portfolio_db.empty:
             if realtime_prices[symbol]["통화"] == "USD":
                 curr_p *= current_usd_krw
 
-        # 시세 조회 실패(0원) 시 매수 평단가로 방어
         if curr_p == 0.0:
             curr_p = row["현재가"] if row["현재가"] > 0 else row["평단가"]
 
@@ -244,18 +250,6 @@ with st.sidebar:
                 st.success(f"'{in_name}' 추가 완료!")
                 st.rerun()
 
-    with st.expander("🗑️ 보유 종목 삭제"):
-        if not st.session_state.portfolio_db.empty:
-            temp_df = st.session_state.portfolio_db.copy()
-            temp_df["item_label"] = temp_df["종목명"] + " (" + temp_df["계좌"] + ")"
-            del_item_target = st.selectbox("삭제할 항목 선택", options=temp_df["item_label"].unique())
-            
-            if st.button("보유 종목 삭제", use_container_width=True):
-                selected_idx = temp_df[temp_df["item_label"] == del_item_target].index
-                st.session_state.portfolio_db = st.session_state.portfolio_db.drop(selected_idx).reset_index(drop=True)
-                st.success("선택한 종목 삭제 완료!")
-                st.rerun()
-
 # =====================================================================
 # 5. 메인 대시보드 화면
 # =====================================================================
@@ -282,51 +276,133 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황
+# [TAB 1] 종목별 현황 (자리이동, 수정, 삭제 버튼 구현)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
     
     if not df.empty:
-        grouped_stock = df.groupby("종목명").agg({
-            "현재가": "first",
-            "수량": "sum",
-            "매수금액": "sum",
-            "평가금액": "sum",
-            "손익": "sum",
-            "누적배당": "sum"
-        }).reset_index()
-        grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
+        # 고유 종목 리스트 순서 유지
+        unique_stocks = list(df["종목명"].unique())
         
+        # 종목 수정 모달/팝업 패널
+        if st.session_state.editing_stock is not None:
+            target_stock = st.session_state.editing_stock
+            st.info(f"✏️ **'{target_stock}' 종목 정보 수정 중**")
+            
+            # 해당 종목 데이터 가져오기
+            stock_rows = df[df["종목명"] == target_stock]
+            first_row = stock_rows.iloc[0]
+            
+            with st.form("edit_stock_form"):
+                e_name = st.text_input("종목명", value=first_row["종목명"])
+                e_ticker = st.text_input("티커", value=first_row["티커"])
+                e_qty = st.number_input("총 보유 수량", value=int(stock_rows["수량"].sum()))
+                e_avg = st.number_input("평단가(원)", value=int(first_row["평단가"]))
+                e_curr = st.number_input("현재가(원)", value=int(first_row["현재가"]))
+                e_div = st.number_input("누적 배당금(원)", value=int(stock_rows["누적배당"].sum()))
+                
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    if st.form_submit_button("수정 내용 저장", use_container_width=True):
+                        # 데이터 업데이트
+                        idx_list = stock_rows.index
+                        for i in idx_list:
+                            st.session_state.portfolio_db.at[i, "종목명"] = e_name
+                            st.session_state.portfolio_db.at[i, "티커"] = e_ticker
+                            st.session_state.portfolio_db.at[i, "수량"] = e_qty
+                            st.session_state.portfolio_db.at[i, "평단가"] = e_avg
+                            st.session_state.portfolio_db.at[i, "현재가"] = e_curr
+                            st.session_state.portfolio_db.at[i, "매수금액"] = e_qty * e_avg
+                            st.session_state.portfolio_db.at[i, "평가금액"] = e_qty * e_curr
+                            st.session_state.portfolio_db.at[i, "손익"] = (e_qty * e_curr) - (e_qty * e_avg)
+                            st.session_state.portfolio_db.at[i, "누적배당"] = e_div
+                            
+                        st.session_state.editing_stock = None
+                        st.success("수정이 완료되었습니다.")
+                        st.rerun()
+                with c_btn2:
+                    if st.form_submit_button("취소", use_container_width=True):
+                        st.session_state.editing_stock = None
+                        st.rerun()
+            st.markdown("---")
+
+        # [요구사항 2] 4열 카드 배치 + 자리이동/수정/삭제 버튼
         cols = st.columns(4)
-        for idx, row in grouped_stock.iterrows():
+        for idx, name in enumerate(unique_stocks):
+            group = df[df["종목명"] == name]
+            curr_p = group["현재가"].iloc[0]
+            sum_qty = group["수량"].sum()
+            sum_buy = group["매수금액"].sum()
+            sum_eval = group["평가금액"].sum()
+            sum_profit = group["손익"].sum()
+            sum_div = group["누적배당"].sum()
+            rate = (sum_profit / sum_buy * 100) if sum_buy > 0 else 0.0
+            avg_p = (sum_buy / sum_qty) if sum_qty > 0 else 0
+            
             col_idx = idx % 4
-            profit_class = "card-profit-plus" if row["손익"] >= 0 else "card-profit-minus"
+            profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
+            
             with cols[col_idx]:
                 st.markdown(f'''
                 <div class="stock-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div class="stock-title">{row['종목명']}</div>
-                        <div class="stock-price">{row['현재가']:,.0f}</div>
+                        <div class="stock-title">{name}</div>
+                        <div class="stock-price">{curr_p:,.0f}</div>
                     </div>
-                    <hr style="margin:8px 0; border:none; border-top:1px solid #EDF2F7;">
+                    <hr style="margin:6px 0; border:none; border-top:1px solid #EDF2F7;">
                     <div style="display:flex; justify-content:space-between;">
-                        <div><span class="card-label">보유수량</span><br><span class="card-num">{row['수량']:,.0f}주</span></div>
-                        <div style="text-align:right;"><span class="card-label">평단가</span><br><span class="card-num">{(row['매수금액']/row['수량']):,.0f}</span></div>
+                        <div><span class="card-label">보유수량</span><br><span class="card-num">{sum_qty:,.0f}주</span></div>
+                        <div style="text-align:right;"><span class="card-label">평단가</span><br><span class="card-num">{avg_p:,.0f}</span></div>
                     </div>
-                    <div style="display:flex; justify-content:space-between; margin-top:6px;">
-                        <div><span class="card-label">총 매수금</span><br><span class="card-num">{row['매수금액']:,.0f}</span></div>
-                        <div style="text-align:right;"><span class="card-label">총 평가금</span><br><span class="card-num">{row['평가금액']:,.0f}</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                        <div><span class="card-label">총 매수금</span><br><span class="card-num">{sum_buy:,.0f}</span></div>
+                        <div style="text-align:right;"><span class="card-label">총 평가금</span><br><span class="card-num">{sum_eval:,.0f}</span></div>
                     </div>
-                    <div style="display:flex; justify-content:space-between; margin-top:6px;">
-                        <div><span class="card-label">전체 수익금</span><br><span class="{profit_class}">{row['손익']:+,.0f}</span></div>
-                        <div style="text-align:right;"><span class="card-label">전체 수익률</span><br><span class="{profit_class}">{row['수익률']:+.2f}%</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                        <div><span class="card-label">전체 수익금</span><br><span class="{profit_class}">{sum_profit:+,.0f}</span></div>
+                        <div style="text-align:right;"><span class="card-label">전체 수익률</span><br><span class="{profit_class}">{rate:+.2f}%</span></div>
                     </div>
-                    <div style="margin-top:6px; text-align:right; font-size:12px; color:#2ECC71; font-weight:600;">
-                        누적 배당금: ₩{row['누적배당']:,.0f}
+                    <div style="margin-top:4px; text-align:right; font-size:11px; color:#2ECC71; font-weight:600;">
+                        누적 배당금: ₩{sum_div:,.0f}
                     </div>
                 </div>
                 ''', unsafe_allow_html=True)
+                
+                # [버튼부] 자리이동(위/아래), 수정, 삭제
+                b1, b2, b3, b4 = st.columns(4)
+                with b1:
+                    if st.button("⬆️", key=f"up_{name}", help="위로 이동"):
+                        if idx > 0:
+                            # 순서 스왑
+                            prev_name = unique_stocks[idx-1]
+                            # 데이터프레임 순서 정렬 변경
+                            idx_a = df[df["종목명"] == name].index
+                            idx_b = df[df["종목명"] == prev_name].index
+                            # 재배치 후 세션 반영
+                            new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
+                            st.session_state.portfolio_db = new_df
+                            st.rerun()
+                with b2:
+                    if st.button("⬇️", key=f"down_{name}", help="아래로 이동"):
+                        if idx < len(unique_stocks) - 1:
+                            next_name = unique_stocks[idx+1]
+                            idx_a = df[df["종목명"] == name].index
+                            idx_b = df[df["종목명"] == next_name].index
+                            new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
+                            st.session_state.portfolio_db = new_df
+                            st.rerun()
+                with b3:
+                    if st.button("✏️", key=f"edit_{name}", help="수정"):
+                        st.session_state.editing_stock = name
+                        st.rerun()
+                with b4:
+                    if st.button("🗑️", key=f"del_{name}", help="삭제"):
+                        st.session_state.portfolio_db = st.session_state.portfolio_db[
+                            st.session_state.portfolio_db["종목명"] != name
+                        ].reset_index(drop=True)
+                        st.success(f"'{name}' 종목이 삭제되었습니다.")
+                        st.rerun()
 
         st.markdown("---")
         st.subheader("계좌별 보유현황")
