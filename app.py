@@ -3,6 +3,9 @@ import pandas as pd
 import yfinance as yf
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
+from bs4 import BeautifulSoup
+import re
 from datetime import datetime, timedelta
 
 # =====================================================================
@@ -80,74 +83,86 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 실시간 시세 및 환율 조회 모듈 (오류 방지 강화 버전)
+# 2. 초고속 네비게이션 & yfinance 실시간 시세 수집 엔진
 # =====================================================================
-@st.cache_data(ttl=30)  # 캐시 주기를 30초로 단축
+@st.cache_data(ttl=30)  # 30초 간격 캐싱
 def fetch_realtime_market_data(ticker_list: tuple):
+    """
+    한국 주식/ETF는 네이버 금융 크롤링으로 실시간 100% 정밀 조회
+    미국 주식/ETF 및 환율은 yfinance 조회
+    """
     price_data = {}
     
-    # 1. 실시간 환율 조회 (USD/KRW)
+    # 1. USD/KRW 환율 수집
     try:
         usd_krw_ticker = yf.Ticker("KRW=X")
-        usd_krw = float(usd_krw_ticker.fast_info.get('lastPrice', 0))
-        if usd_krw == 0:
-            hist_krw = usd_krw_ticker.history(period="2d")
-            usd_krw = float(hist_krw['Close'].iloc[-1])
+        usd_krw = float(usd_krw_ticker.fast_info.get('lastPrice', 1350.0))
     except Exception:
-        usd_krw = 1350.0  # 기본값
+        usd_krw = 1350.0
 
-    # 2. 종목별 실시간 주가 수집
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
     for symbol in set(ticker_list):
         if not symbol or symbol == "-":
             continue
-        try:
-            t = yf.Ticker(symbol)
-            curr_price = None
             
-            # [방법 1] fast_info 조회 시도
+        curr_price = 0.0
+        is_usd = not symbol.endswith((".KS", ".KQ"))
+        
+        # [A] 한국 주식/ETF: 네이버 금융 실시간 조회 (지연 없음)
+        if symbol.endswith((".KS", ".KQ")):
+            code = re.sub(r'[^0-9]', '', symbol)  # 종목코드 6자리 추출 (예: 178260)
+            url = f"https://finance.naver.com/item/main.naver?code={code}"
             try:
-                curr_price = t.fast_info.get('lastPrice')
+                res = requests.get(url, headers=headers, timeout=3)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    no_today = soup.find('p', class_='no_today')
+                    if no_today:
+                        price_str = no_today.find('span', class_='blind').text.replace(',', '')
+                        curr_price = float(price_str)
             except Exception:
-                curr_price = None
+                curr_price = 0.0
 
-            # [방법 2] fast_info 실패 시 history(1d) 다이렉트 수집 (한국 주식 호환성 강화)
-            if curr_price is None or pd.isna(curr_price) or curr_price == 0:
-                hist = t.history(period="5d")
-                if not hist.empty:
-                    curr_price = hist['Close'].iloc[-1]
-                else:
-                    curr_price = 0.0
-
-            is_usd = not symbol.endswith((".KS", ".KQ"))
-            price_data[symbol] = {
-                "현재가": float(curr_price),
-                "통화": "USD" if is_usd else "KRW"
-            }
-        except Exception:
-            price_data[symbol] = {"현재가": 0.0, "통화": "KRW"}
-
+        # [B] 미국 주식/ETF 또는 네이버 예외 시: yfinance 조회
+        if curr_price == 0.0:
+            try:
+                t = yf.Ticker(symbol)
+                curr_price = t.fast_info.get('lastPrice', 0.0)
+                if curr_price == 0.0:
+                    hist = t.history(period="1d")
+                    if not hist.empty:
+                        curr_price = hist['Close'].iloc[-1]
+            except Exception:
+                curr_price = 0.0
+                
+        price_data[symbol] = {
+            "현재가": float(curr_price),
+            "통화": "USD" if is_usd else "KRW"
+        }
+        
     return price_data, usd_krw
 
 # =====================================================================
-# 3. 계좌 및 종목 DB 세션 초기화
+# 3. 계좌 및 보유 종목 세션 DB 초기화
 # =====================================================================
 if "account_list" not in st.session_state:
     st.session_state.account_list = ["미래에셋 DC", "미래에셋 연금저축", "미래에셋 IRP", "신한은행 DC", "KB국민은행 IRP"]
 
 if "portfolio_db" not in st.session_state:
     st.session_state.portfolio_db = pd.DataFrame([
-        {"종목명": "PLUS 고배당주", "티커": "161510.KS", "계좌": "미래에셋 DC", "수량": 5702, "평단가": 20198, "현재가": 26175, "매수금액": 115167780, "평가금액": 149249850, "손익": 34082070, "수익률": 29.59, "누적배당": 2202810},
-        {"종목명": "TIGER 미국배당다우존스", "티커": "458730.KS", "계좌": "미래에셋 연금저축", "수량": 2538, "평단가": 11406, "현재가": 14425, "매수금액": 28947721, "평가금액": 36611650, "손익": 7663929, "수익률": 26.47, "누적배당": 1782087},
-        {"종목명": "TIGER 미국배당다우존스", "티커": "458730.KS", "계좌": "미래에셋 IRP", "수량": 2919, "평단가": 10849, "현재가": 14425, "매수금액": 31668460, "평가금액": 42106575, "손익": 10438115, "수익률": 32.96, "누적배당": 2050193},
-        {"종목명": "KODEX TDF2050액티브", "티커": "431040.KS", "계좌": "미래에셋 DC", "수량": 6484, "평단가": 15295, "현재가": 16455, "매수금액": 99174321, "평가금액": 106694220, "손익": 7519899, "수익률": 7.58, "누적배당": 969224},
-        {"종목명": "KODEX 미국배당커버드콜액티브", "티커": "441640.KS", "계좌": "미래에셋 DC", "수량": 5454, "평단가": 12824, "현재가": 12785, "매수금액": 69940905, "평가금액": 69729390, "손익": -211515, "수익률": -0.30, "누적배당": 708466},
-        {"종목명": "KODEX 미국나스닥100", "티커": "178260.KS", "계좌": "미래에셋 DC", "수량": 2325, "평단가": 24697, "현재가": 24350, "매수금액": 57420775, "평가금액": 56613750, "손익": -807025, "수익률": -1.41, "누적배당": 157080},
-        {"종목명": "RISE 머니마켓액티브", "티커": "459590.KS", "계좌": "미래에셋 DC", "수량": 1020, "평단가": 54506, "현재가": 54655, "매수금액": 55596261, "평가금액": 55748100, "손익": 151839, "수익률": 0.27, "누적배당": 1523115},
-        {"종목명": "SOL 미국배당다우존스", "티커": "446720.KS", "계좌": "신한은행 DC", "수량": 2412, "평단가": 9095, "현재가": 13235, "매수금액": 21937917, "평가금액": 31922820, "손익": 9984903, "수익률": 45.51, "누적배당": 2134887},
-        {"종목명": "TIGER KRX금현물", "티커": "411060.KS", "계좌": "미래에셋 DC", "수량": 1322, "평단가": 12967, "현재가": 16260, "매수금액": 17142565, "평가금액": 21495720, "손익": 4353155, "수익률": 25.39, "누적배당": 1378}
+        {"종목명": "PLUS 고배당주", "티커": "161510.KS", "계좌": "미래에셋 DC", "수량": 5702, "평단가": 20198, "현재가": 0.0, "매수금액": 115167780, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 2202810},
+        {"종목명": "TIGER 미국배당다우존스", "티커": "458730.KS", "계좌": "미래에셋 연금저축", "수량": 2538, "평단가": 11406, "현재가": 0.0, "매수금액": 28947721, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 1782087},
+        {"종목명": "TIGER 미국배당다우존스", "티커": "458730.KS", "계좌": "미래에셋 IRP", "수량": 2919, "평단가": 10849, "현재가": 0.0, "매수금액": 31668460, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 2050193},
+        {"종목명": "KODEX TDF2050액티브", "티커": "431040.KS", "계좌": "미래에셋 DC", "수량": 6484, "평단가": 15295, "현재가": 0.0, "매수금액": 99174321, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 969224},
+        {"종목명": "KODEX 미국배당커버드콜액티브", "티커": "441640.KS", "계좌": "미래에셋 DC", "수량": 5454, "평단가": 12824, "현재가": 0.0, "매수금액": 69940905, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 708466},
+        {"종목명": "KODEX 미국나스닥100", "티커": "178260.KS", "계좌": "미래에셋 DC", "수량": 2325, "평단가": 24697, "현재가": 0.0, "매수금액": 57420775, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 157080},
+        {"종목명": "RISE 머니마켓액티브", "티커": "459590.KS", "계좌": "미래에셋 DC", "수량": 1020, "평단가": 54506, "현재가": 0.0, "매수금액": 55596261, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 1523115},
+        {"종목명": "SOL 미국배당다우존스", "티커": "446720.KS", "계좌": "신한은행 DC", "수량": 2412, "평단가": 9095, "현재가": 0.0, "매수금액": 21937917, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 2134887},
+        {"종목명": "TIGER KRX금현물", "티커": "411060.KS", "계좌": "미래에셋 DC", "수량": 1322, "평단가": 12967, "현재가": 0.0, "매수금액": 17142565, "평가금액": 0.0, "손익": 0.0, "수익률": 0.0, "누적배당": 1378}
     ])
 
-# 실시간 주가 반영 업데이트
+# 네이버 금융 실시간 현재가 즉시 동기화
 if not st.session_state.portfolio_db.empty:
     tickers = tuple(st.session_state.portfolio_db["티커"].unique())
     realtime_prices, current_usd_krw = fetch_realtime_market_data(tickers)
@@ -170,7 +185,7 @@ if not st.session_state.portfolio_db.empty:
 
 df = st.session_state.portfolio_db
 
-# 상단 합계 계산
+# 상단 배너용 통합 합계 계산
 total_buy = df["매수금액"].sum() if not df.empty else 0
 total_eval = df["평가금액"].sum() if not df.empty else 0
 total_profit = total_eval - total_buy
@@ -184,7 +199,7 @@ with st.sidebar:
     
     if st.button("🔄 실시간 시세/환율 즉시 갱신", use_container_width=True):
         st.cache_data.clear()
-        st.success("최신 시세가 반영되었습니다!")
+        st.success("실시간 시세가 갱신되었습니다!")
         st.rerun()
         
     st.markdown("---")
@@ -215,23 +230,19 @@ with st.sidebar:
         with st.form("add_item_form"):
             in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
             in_name = st.text_input("종목명", value="KODEX 200")
-            in_ticker = st.text_input("티커/코드 (미국은 AAPL, 한국은 069500.KS)", value="069500.KS")
+            in_ticker = st.text_input("티커/코드 (미국 AAPL, 한국 069500.KS)", value="069500.KS")
             in_qty = st.number_input("수량", min_value=1, value=100)
             in_avg = st.number_input("평단가(원)", min_value=0, value=35000)
-            in_curr = st.number_input("현재가(원)", min_value=0, value=36000)
             in_div = st.number_input("누적 배당금(원)", min_value=0, value=0)
             
             if st.form_submit_button("보유 종목 저장", use_container_width=True):
                 buy_amt = in_qty * in_avg
-                eval_amt = in_qty * in_curr
-                profit = eval_amt - buy_amt
-                rate = (profit / buy_amt * 100) if buy_amt > 0 else 0.0
                 
                 new_row = pd.DataFrame([{
                     "종목명": in_name, "티커": in_ticker.strip(), "계좌": in_acc,
-                    "수량": in_qty, "평단가": in_avg, "현재가": in_curr,
-                    "매수금액": buy_amt, "평가금액": eval_amt,
-                    "손익": profit, "수익률": round(rate, 2), "누적배당": in_div
+                    "수량": in_qty, "평단가": in_avg, "현재가": 0.0,
+                    "매수금액": buy_amt, "평가금액": buy_amt,
+                    "손익": 0.0, "수익률": 0.0, "누적배당": in_div
                 }])
                 
                 st.session_state.portfolio_db = pd.concat([st.session_state.portfolio_db, new_row], ignore_index=True)
@@ -254,7 +265,7 @@ with st.sidebar:
             st.write("삭제할 보유 종목이 없습니다.")
 
 # =====================================================================
-# 5. 메인 대시보드 화면
+# 5. 메인 대시보드 화면 (PENSION TREE 4개 메인 탭)
 # =====================================================================
 col_brand, col_banner = st.columns([1, 3])
 
@@ -295,7 +306,7 @@ with tab1:
         }).reset_index()
         grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
         
-        # 4열 카드 레이아웃
+        # 4열 그리드 카드 배치
         cols = st.columns(4)
         for idx, row in grouped_stock.iterrows():
             col_idx = idx % 4
