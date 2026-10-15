@@ -14,18 +14,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# PENSION TREE 전용 CSS 디자인 스타일 적용
+# PENSION TREE 전용 CSS 디자인
 st.markdown("""
 <style>
-    /* PENSION TREE 로고 스타일 */
     .brand-header {
         font-size: 24px;
         font-weight: 800;
         color: #2ECC71;
         letter-spacing: 1px;
     }
-    
-    /* 상단 자산 요약바 (Header Banner) */
     .summary-banner {
         background-color: #F8F9FA;
         border: 1px solid #E9ECEF;
@@ -43,7 +40,6 @@ st.markdown("""
     .summary-eval { color: #2B6CB0; font-weight: 700; }
     .summary-profit { color: #E53E3E; font-weight: 700; }
 
-    /* 카드 스타일 (종목별 현황 Grid Card) */
     .stock-card {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -84,8 +80,11 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 실시간 데이터 & 세션 데이터 초기화
+# 2. 계좌 및 종목 DB 초기화 (세션 상태)
 # =====================================================================
+if "account_list" not in st.session_state:
+    st.session_state.account_list = ["미래에셋 DC", "미래에셋 연금저축", "미래에셋 IRP", "신한은행 DC", "KB국민은행 IRP"]
+
 if "portfolio_db" not in st.session_state:
     st.session_state.portfolio_db = pd.DataFrame([
         {"종목명": "PLUS 고배당주", "티커": "161510.KS", "계좌": "미래에셋 DC", "수량": 5702, "평단가": 20198, "현재가": 26175, "매수금액": 115167780, "평가금액": 149249850, "손익": 34082070, "수익률": 29.59, "누적배당": 2202810},
@@ -102,13 +101,87 @@ if "portfolio_db" not in st.session_state:
 df = st.session_state.portfolio_db
 
 # 상단 합계 집계
-total_buy = df["매수금액"].sum()
-total_eval = df["평가금액"].sum()
+total_buy = df["매수금액"].sum() if not df.empty else 0
+total_eval = df["평가금액"].sum() if not df.empty else 0
 total_profit = total_eval - total_buy
 total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 
 # =====================================================================
-# 3. PENSION TREE 상단 네비게이션 & 헤더 렌더링
+# 3. 사이드바 - 계좌 및 종목 추가/삭제 관리
+# =====================================================================
+with st.sidebar:
+    st.header("⚙️ PENSION TREE 관리")
+    
+    # -----------------------------------------------------------------
+    # [1] 계좌 관리 (추가 / 삭제)
+    # -----------------------------------------------------------------
+    with st.expander("🏦 계좌 추가 / 삭제"):
+        st.subheader("계좌 추가")
+        new_acc_name = st.text_input("새 계좌명 (예: 토스증권 주식)")
+        if st.button("계좌 등록", use_container_width=True):
+            if new_acc_name and new_acc_name not in st.session_state.account_list:
+                st.session_state.account_list.append(new_acc_name)
+                st.success(f"'{new_acc_name}' 계좌가 추가되었습니다.")
+                st.rerun()
+                
+        st.markdown("---")
+        st.subheader("계좌 삭제")
+        del_acc_target = st.selectbox("삭제할 계좌 선택", options=st.session_state.account_list)
+        if st.button("선택 계좌 삭제", use_container_width=True):
+            st.session_state.account_list.remove(del_acc_target)
+            # 해당 계좌에 속한 보유 종목도 함께 삭제
+            st.session_state.portfolio_db = st.session_state.portfolio_db[
+                st.session_state.portfolio_db["계좌"] != del_acc_target
+            ].reset_index(drop=True)
+            st.success(f"'{del_acc_target}' 계좌 및 관련 종목이 삭제되었습니다.")
+            st.rerun()
+
+    # -----------------------------------------------------------------
+    # [2] 종목 추가 / 삭제
+    # -----------------------------------------------------------------
+    with st.expander("📌 종목 보유내역 추가"):
+        with st.form("add_item_form"):
+            in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
+            in_name = st.text_input("종목명", value="KODEX 200")
+            in_ticker = st.text_input("티커/코드", value="069500.KS")
+            in_qty = st.number_input("수량", min_value=1, value=100)
+            in_avg = st.number_input("평단가(원)", min_value=0, value=35000)
+            in_curr = st.number_input("현재가(원)", min_value=0, value=36000)
+            in_div = st.number_input("누적 배당금(원)", min_value=0, value=0)
+            
+            if st.form_submit_button("보유 종목 저장", use_container_width=True):
+                buy_amt = in_qty * in_avg
+                eval_amt = in_qty * in_curr
+                profit = eval_amt - buy_amt
+                rate = (profit / buy_amt * 100) if buy_amt > 0 else 0.0
+                
+                new_row = pd.DataFrame([{
+                    "종목명": in_name, "티커": in_ticker, "계좌": in_acc,
+                    "수량": in_qty, "평단가": in_avg, "현재가": in_curr,
+                    "매수금액": buy_amt, "평가금액": eval_amt,
+                    "손익": profit, "수익률": round(rate, 2), "누적배당": in_div
+                }])
+                
+                st.session_state.portfolio_db = pd.concat([st.session_state.portfolio_db, new_row], ignore_index=True)
+                st.success(f"'{in_name}' 보유 내역이 추가되었습니다.")
+                st.rerun()
+
+    with st.expander("🗑️ 보유 종목 삭제"):
+        if not st.session_state.portfolio_db.empty:
+            st.session_state.portfolio_db["item_label"] = st.session_state.portfolio_db["종목명"] + " (" + st.session_state.portfolio_db["계좌"] + ")"
+            del_item_target = st.selectbox("삭제할 항목 선택", options=st.session_state.portfolio_db["item_label"].unique())
+            
+            if st.button("보유 종목 삭제", use_container_width=True):
+                st.session_state.portfolio_db = st.session_state.portfolio_db[
+                    st.session_state.portfolio_db["item_label"] != del_item_target
+                ].drop(columns=["item_label"]).reset_index(drop=True)
+                st.success("선택한 보유 종목이 삭제되었습니다.")
+                st.rerun()
+        else:
+            st.write("삭제할 보유 종목이 없습니다.")
+
+# =====================================================================
+# 4. 상단 네비게이션 & 메인 대시보드
 # =====================================================================
 col_brand, col_banner = st.columns([1, 3])
 
@@ -125,9 +198,9 @@ with col_banner:
     </div>
     ''', unsafe_allow_html=True)
 
-# =====================================================================
-# 4. 메인 대시보드 탭 구성 (PENSION TREE 4개 메인 화면)
-# =====================================================================
+# ---------------------------------------------------------------------
+# 메인 탭 구성
+# ---------------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 종목별 & 계좌별 현황", 
     "📑 거래 내역", 
@@ -136,106 +209,93 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (Grid Card) & 계좌별 보유현황 (에러 수정 완료)
+# [TAB 1] 종목별 현황 & 계좌별 보유현황
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
     
-    # 종목별 그룹핑
-    grouped_stock = df.groupby("종목명").agg({
-        "현재가": "first",
-        "수량": "sum",
-        "매수금액": "sum",
-        "평가금액": "sum",
-        "손익": "sum",
-        "누적배당": "sum"
-    }).reset_index()
-    grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
-    
-    # 4열 그리드 카드로 종목 현황 배치
-    cols = st.columns(4)
-    for idx, row in grouped_stock.iterrows():
-        col_idx = idx % 4
-        profit_class = "card-profit-plus" if row["손익"] >= 0 else "card-profit-minus"
-        with cols[col_idx]:
-            st.markdown(f'''
-            <div class="stock-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div class="stock-title">{row['종목명']}</div>
-                    <div class="stock-price">{row['현재가']:,.0f}</div>
+    if not df.empty:
+        grouped_stock = df.groupby("종목명").agg({
+            "현재가": "first",
+            "수량": "sum",
+            "매수금액": "sum",
+            "평가금액": "sum",
+            "손익": "sum",
+            "누적배당": "sum"
+        }).reset_index()
+        grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
+        
+        # 4열 그리드 카드
+        cols = st.columns(4)
+        for idx, row in grouped_stock.iterrows():
+            col_idx = idx % 4
+            profit_class = "card-profit-plus" if row["손익"] >= 0 else "card-profit-minus"
+            with cols[col_idx]:
+                st.markdown(f'''
+                <div class="stock-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="stock-title">{row['종목명']}</div>
+                        <div class="stock-price">{row['현재가']:,.0f}</div>
+                    </div>
+                    <hr style="margin:8px 0; border:none; border-top:1px solid #EDF2F7;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <div><span class="card-label">보유수량</span><br><span class="card-num">{row['수량']:,.0f}주</span></div>
+                        <div style="text-align:right;"><span class="card-label">평단가</span><br><span class="card-num">{(row['매수금액']/row['수량']):,.0f}</span></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px;">
+                        <div><span class="card-label">총 매수금</span><br><span class="card-num">{row['매수금액']:,.0f}</span></div>
+                        <div style="text-align:right;"><span class="card-label">총 평가금</span><br><span class="card-num">{row['평가금액']:,.0f}</span></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px;">
+                        <div><span class="card-label">전체 수익금</span><br><span class="{profit_class}">{row['손익']:+,.0f}</span></div>
+                        <div style="text-align:right;"><span class="card-label">전체 수익률</span><br><span class="{profit_class}">{row['수익률']:+.2f}%</span></div>
+                    </div>
+                    <div style="margin-top:6px; text-align:right; font-size:12px; color:#2ECC71; font-weight:600;">
+                        누적 배당금: ₩{row['누적배당']:,.0f}
+                    </div>
                 </div>
-                <hr style="margin:8px 0; border:none; border-top:1px solid #EDF2F7;">
-                <div style="display:flex; justify-content:space-between;">
-                    <div><span class="card-label">보유수량</span><br><span class="card-num">{row['수량']:,.0f}주</span></div>
-                    <div style="text-align:right;"><span class="card-label">평단가</span><br><span class="card-num">{(row['매수금액']/row['수량']):,.0f}</span></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:6px;">
-                    <div><span class="card-label">총 매수금</span><br><span class="card-num">{row['매수금액']:,.0f}</span></div>
-                    <div style="text-align:right;"><span class="card-label">총 평가금</span><br><span class="card-num">{row['평가금액']:,.0f}</span></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:6px;">
-                    <div><span class="card-label">전체 수익금</span><br><span class="{profit_class}">{row['손익']:+,.0f}</span></div>
-                    <div style="text-align:right;"><span class="card-label">전체 수익률</span><br><span class="{profit_class}">{row['수익률']:+.2f}%</span></div>
-                </div>
-                <div style="margin-top:6px; text-align:right; font-size:12px; color:#2ECC71; font-weight:600;">
-                    누적 배당금: ₩{row['누적배당']:,.0f}
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
+                ''', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("계좌별 보유현황")
-    
-    # 계좌별 상세 테이블
-    for name, group in df.groupby("종목명"):
-        with st.expander(f"📦 {name}  |  평가금액: ₩{group['평가금액'].sum():,.0f} ({group['손익'].sum():+,.0f}원)", expanded=True):
-            display_g = group[["계좌", "수량", "평단가", "매수금액", "평가금액", "손익", "수익률", "누적배당"]].copy()
-            st.dataframe(display_g.style.format({
-                "수량": "{:,.0f}", 
-                "평단가": "₩{:,.0f}", 
-                "매수금액": "₩{:,.0f}",
-                "평가금액": "₩{:,.0f}", 
-                "손익": "₩{:+,.0f}",      # <-- 포맷 오타 수정 (+,0f -> +,.0f)
-                "수익률": "{:+.2f}%", 
-                "누적배당": "₩{:,.0f}"
-            }), use_container_width=True)
+        st.markdown("---")
+        st.subheader("계좌별 보유현황")
+        
+        # 계좌별 상세 테이블 (수정된 포맷 문자열 적용)
+        for name, group in df.groupby("종목명"):
+            with st.expander(f"📦 {name}  |  평가금액: ₩{group['평가금액'].sum():,.0f} ({group['손익'].sum():+,.0f}원)", expanded=True):
+                display_g = group[["계좌", "수량", "평단가", "매수금액", "평가금액", "손익", "수익률", "누적배당"]].copy()
+                st.dataframe(display_g.style.format({
+                    "수량": "{:,.0f}", 
+                    "평단가": "₩{:,.0f}", 
+                    "매수금액": "₩{:,.0f}",
+                    "평가금액": "₩{:,.0f}", 
+                    "손익": "₩{:+,.0f}",
+                    "수익률": "{:+.2f}%", 
+                    "누적배당": "₩{:,.0f}"
+                }), use_container_width=True)
+    else:
+        st.info("등록된 종목 및 계좌 보유 데이터가 없습니다. 사이드바에서 추가해주세요.")
 
 # ---------------------------------------------------------------------
-# [TAB 2] 거래 내역 (사진 [2] 디자인)
+# [TAB 2] 거래 내역
 # ---------------------------------------------------------------------
 with tab2:
-    st.subheader("거래 내역 (199건)")
-    
-    # 상단 버튼 헤더
-    btn_c1, btn_c2, btn_c3 = st.columns([6, 2, 2])
-    with btn_c2:
-        if st.button("➕ 거래 신규 등록", use_container_width=True):
-            st.info("사이드바에서 신규 거래를 입력해 주세요.")
-    with btn_c3:
-        st.button("🔄 필터 초기화", use_container_width=True)
-        
-    # 거래 내역 테이블 샘플 (사진 [2] 스타일)
+    st.subheader("거래 내역")
     tx_records = [
         {"거래일": "2026-03-10", "계좌": "미래에셋 연금저축", "종목": "KODEX 미국배당커버드콜액티브", "구분": "매수", "수량": 233, "단가": 12845, "거래금액": 2992885},
         {"거래일": "2026-03-09", "계좌": "미래에셋 DC", "종목": "KODEX 미국배당커버드콜액티브", "구분": "매수", "수량": 781, "단가": 12815, "거래금액": 10008515},
-        {"거래일": "2026-03-09", "계좌": "미래에셋 DC", "종목": "PLUS 고배당주", "구분": "매수", "수량": 407, "단가": 24540, "거래금액": 9987780},
-        {"거래일": "2026-03-09", "계좌": "미래에셋 DC", "종목": "RISE 머니마켓액티브", "구분": "매도", "수량": 366, "단가": 54625, "거래금액": 19992750},
-        {"거래일": "2026-03-09", "계좌": "미래에셋 IRP", "종목": "KODEX TDF2050액티브", "구분": "매수", "수량": 1, "단가": 16275, "거래금액": 16275}
+        {"거래일": "2026-03-09", "계좌": "미래에셋 DC", "종목": "PLUS 고배당주", "구분": "매수", "수량": 407, "단가": 24540, "거래금액": 9987780}
     ]
     st.dataframe(pd.DataFrame(tx_records).style.format({
         "수량": "{:,.0f}", "단가": "₩{:,.0f}", "거래금액": "₩{:,.0f}"
     }), use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 3] 자산 트렌드 (사진 [3] 듀얼 Y축 차트)
+# [TAB 3] 자산 트렌드
 # ---------------------------------------------------------------------
 with tab3:
     st.subheader("자산 트렌드")
-    
-    # 기간 선택 라디오
     period_sel = st.radio("기간 선택", ["최근 1개월", "최근 3개월", "최근 6개월", "최근 1년", "최근 3년", "최근 5년", "전체기간"], index=2, horizontal=True)
     
-    # 시계열 시뮬레이션 데이터 (매수금액, 평가금액, 수익률)
     dates = [datetime(2025, 9, 23) + timedelta(days=i*5) for i in range(35)]
     buy_vals = [430000000 + i*3000000 for i in range(35)]
     eval_vals = [440000000 + i*5000000 + (i%3)*4000000 for i in range(35)]
@@ -243,7 +303,6 @@ with tab3:
     
     df_trend = pd.DataFrame({"날짜": dates, "매수금액": buy_vals, "평가금액": eval_vals, "수익률": rates})
     
-    # 사진 [3]과 동일한 듀얼 Y축 차트 구현
     fig_trend = go.Figure()
     fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["매수금액"], name="매수금액", line=dict(color="#2ECC71", width=2)))
     fig_trend.add_trace(go.Scatter(x=df_trend["날짜"], y=df_trend["평가금액"], name="평가금액", line=dict(color="#8E44AD", width=2)))
@@ -258,41 +317,13 @@ with tab3:
     st.plotly_chart(fig_trend, use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 4] 배당금 현황 (사진 [4] 막대 차트 & 계층형 요약)
+# [TAB 4] 배당금 현황
 # ---------------------------------------------------------------------
 with tab4:
     st.subheader("배당금 현황")
-    
-    # 월별 배당금 히스토리 차트 (사진 [4] 상단 막대그래프)
     m_labels = [f"24/{m:02d}" for m in range(1, 13)] + [f"25/{m:02d}" for m in range(1, 13)] + ["26/01", "26/02", "26/03"]
     m_divs = [200000, 250000, 300000, 280000, 450000, 420000, 430000, 410000, 480000, 500000, 520000, 550000,
               480000, 510000, 530000, 720000, 680000, 650000, 660000, 670000, 850000, 2400000, 1050000, 1800000, 852150]
     
     fig_div_bar = px.bar(x=m_labels, y=m_divs, labels={'x': '년/월', 'y': '배당 입금액(원)'}, color_discrete_sequence=['#F1C40F'])
     st.plotly_chart(fig_div_bar, use_container_width=True)
-    
-    st.markdown("---")
-    st.subheader("월별 배당 요약 (28개월)")
-    st.caption("총 수령 배당금 합계: ₩14,043,607 원")
-    
-    # 사진 [4] 하단 계층형 트리뷰 아코디언 구현
-    with st.expander("📅 2026년 (총 3,844,544 원)", expanded=True):
-        st.markdown("**• 2026년 03월 (총 852,150 원)**")
-        st.dataframe(pd.DataFrame([
-            {"종목명": "TIGER 미국배당다우존스", "주당 배당금": 38, "보유 수량": 8220, "총 배당금": 312360},
-            {"종목명": "SOL 미국배당다우존스", "주당 배당금": 35, "보유 수량": 2412, "총 배당금": 84420},
-            {"종목명": "PLUS 고배당주", "주당 배당금": 86, "보유 수량": 5295, "총 배당금": 455370}
-        ]).style.format({"주당 배당금": "₩{:,.0f}", "보유 수량": "{:,.0f}", "총 배당금": "₩{:,.0f}"}), use_container_width=True)
-
-# =====================================================================
-# 5. 사이드바 - 거래 추가 모달
-# =====================================================================
-with st.sidebar:
-    st.header("⚙️ PENSION TREE 관리")
-    with st.expander("➕ 거래 등록"):
-        add_stock = st.text_input("종목명", "삼성전자")
-        add_acc = st.selectbox("계좌", ["미래에셋 DC", "미래에셋 연금저축", "미래에셋 IRP", "신한은행 DC"])
-        add_qty = st.number_input("수량", min_value=1, value=100)
-        add_price = st.number_input("단가", min_value=0, value=70000)
-        if st.button("저장"):
-            st.success("새로운 거래 내역이 저장되었습니다.")
