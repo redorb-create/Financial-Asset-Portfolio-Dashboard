@@ -80,7 +80,41 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 계좌 및 종목 DB 초기화 (세션 상태)
+# 2. 실시간 시세 및 환율 조회 모듈 (yfinance)
+# =====================================================================
+@st.cache_data(ttl=60)
+def fetch_realtime_market_data(ticker_list: tuple):
+    """
+    yfinance 기반 실시간 현재가 및 USD/KRW 환율 일괄 조회
+    """
+    price_data = {}
+    try:
+        usd_krw_ticker = yf.Ticker("KRW=X")
+        usd_krw = float(usd_krw_ticker.fast_info['lastPrice'])
+    except Exception:
+        usd_krw = 1350.0
+
+    for symbol in set(ticker_list):
+        if not symbol or symbol == "-":
+            continue
+        try:
+            t = yf.Ticker(symbol)
+            curr_price = t.fast_info.get('lastPrice')
+            if curr_price is None or pd.isna(curr_price):
+                hist = t.history(period="1d")
+                curr_price = hist['Close'].iloc[-1] if not hist.empty else 0.0
+            
+            price_data[symbol] = {
+                "현재가": float(curr_price),
+                "통화": "USD" if not symbol.endswith((".KS", ".KQ")) else "KRW"
+            }
+        except Exception:
+            price_data[symbol] = {"현재가": 0.0, "통화": "KRW"}
+            
+    return price_data, usd_krw
+
+# =====================================================================
+# 3. 계좌 및 종목 DB 세션 초기화
 # =====================================================================
 if "account_list" not in st.session_state:
     st.session_state.account_list = ["미래에셋 DC", "미래에셋 연금저축", "미래에셋 IRP", "신한은행 DC", "KB국민은행 IRP"]
@@ -98,30 +132,56 @@ if "portfolio_db" not in st.session_state:
         {"종목명": "TIGER KRX금현물", "티커": "411060.KS", "계좌": "미래에셋 DC", "수량": 1322, "평단가": 12967, "현재가": 16260, "매수금액": 17142565, "평가금액": 21495720, "손익": 4353155, "수익률": 25.39, "누적배당": 1378}
     ])
 
+# 실시간 주가 반영 업데이트
+if not st.session_state.portfolio_db.empty:
+    tickers = tuple(st.session_state.portfolio_db["티커"].unique())
+    realtime_prices, current_usd_krw = fetch_realtime_market_data(tickers)
+    
+    for idx, row in st.session_state.portfolio_db.iterrows():
+        symbol = row["티커"]
+        if symbol in realtime_prices and realtime_prices[symbol]["현재가"] > 0:
+            m_data = realtime_prices[symbol]
+            curr_p = m_data["현재가"]
+            if m_data["통화"] == "USD":
+                curr_p *= current_usd_krw
+            
+            st.session_state.portfolio_db.at[idx, "현재가"] = curr_p
+            st.session_state.portfolio_db.at[idx, "평가금액"] = row["수량"] * curr_p
+            st.session_state.portfolio_db.at[idx, "손익"] = (row["수량"] * curr_p) - row["매수금액"]
+            if row["매수금액"] > 0:
+                st.session_state.portfolio_db.at[idx, "수익률"] = round(
+                    (st.session_state.portfolio_db.at[idx, "손익"] / row["매수금액"]) * 100, 2
+                )
+
 df = st.session_state.portfolio_db
 
-# 상단 합계 집계
+# 상단 합계 계산
 total_buy = df["매수금액"].sum() if not df.empty else 0
 total_eval = df["평가금액"].sum() if not df.empty else 0
 total_profit = total_eval - total_buy
 total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 
 # =====================================================================
-# 3. 사이드바 - 계좌 및 종목 추가/삭제 관리
+# 4. 사이드바 - 계좌 & 종목 추가/삭제
 # =====================================================================
 with st.sidebar:
     st.header("⚙️ PENSION TREE 관리")
     
-    # -----------------------------------------------------------------
-    # [1] 계좌 관리 (추가 / 삭제)
-    # -----------------------------------------------------------------
+    if st.button("🔄 실시간 시세/환율 즉시 갱신", use_container_width=True):
+        st.cache_data.clear()
+        st.success("최신 시세가 반영되었습니다!")
+        st.rerun()
+        
+    st.markdown("---")
+    
+    # 1) 계좌 관리
     with st.expander("🏦 계좌 추가 / 삭제"):
         st.subheader("계좌 추가")
         new_acc_name = st.text_input("새 계좌명 (예: 토스증권 주식)")
         if st.button("계좌 등록", use_container_width=True):
             if new_acc_name and new_acc_name not in st.session_state.account_list:
                 st.session_state.account_list.append(new_acc_name)
-                st.success(f"'{new_acc_name}' 계좌가 추가되었습니다.")
+                st.success(f"'{new_acc_name}' 계좌 추가 완료!")
                 st.rerun()
                 
         st.markdown("---")
@@ -129,21 +189,18 @@ with st.sidebar:
         del_acc_target = st.selectbox("삭제할 계좌 선택", options=st.session_state.account_list)
         if st.button("선택 계좌 삭제", use_container_width=True):
             st.session_state.account_list.remove(del_acc_target)
-            # 해당 계좌에 속한 보유 종목도 함께 삭제
             st.session_state.portfolio_db = st.session_state.portfolio_db[
                 st.session_state.portfolio_db["계좌"] != del_acc_target
             ].reset_index(drop=True)
-            st.success(f"'{del_acc_target}' 계좌 및 관련 종목이 삭제되었습니다.")
+            st.success(f"'{del_acc_target}' 계좌 삭제 완료!")
             st.rerun()
 
-    # -----------------------------------------------------------------
-    # [2] 종목 추가 / 삭제
-    # -----------------------------------------------------------------
+    # 2) 종목 관리
     with st.expander("📌 종목 보유내역 추가"):
         with st.form("add_item_form"):
             in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
             in_name = st.text_input("종목명", value="KODEX 200")
-            in_ticker = st.text_input("티커/코드", value="069500.KS")
+            in_ticker = st.text_input("티커/코드 (미국은 AAPL, 한국은 069500.KS)", value="069500.KS")
             in_qty = st.number_input("수량", min_value=1, value=100)
             in_avg = st.number_input("평단가(원)", min_value=0, value=35000)
             in_curr = st.number_input("현재가(원)", min_value=0, value=36000)
@@ -156,32 +213,33 @@ with st.sidebar:
                 rate = (profit / buy_amt * 100) if buy_amt > 0 else 0.0
                 
                 new_row = pd.DataFrame([{
-                    "종목명": in_name, "티커": in_ticker, "계좌": in_acc,
+                    "종목명": in_name, "티커": in_ticker.strip(), "계좌": in_acc,
                     "수량": in_qty, "평단가": in_avg, "현재가": in_curr,
                     "매수금액": buy_amt, "평가금액": eval_amt,
                     "손익": profit, "수익률": round(rate, 2), "누적배당": in_div
                 }])
                 
                 st.session_state.portfolio_db = pd.concat([st.session_state.portfolio_db, new_row], ignore_index=True)
-                st.success(f"'{in_name}' 보유 내역이 추가되었습니다.")
+                st.cache_data.clear()
+                st.success(f"'{in_name}' 종목 추가 완료!")
                 st.rerun()
 
     with st.expander("🗑️ 보유 종목 삭제"):
         if not st.session_state.portfolio_db.empty:
-            st.session_state.portfolio_db["item_label"] = st.session_state.portfolio_db["종목명"] + " (" + st.session_state.portfolio_db["계좌"] + ")"
-            del_item_target = st.selectbox("삭제할 항목 선택", options=st.session_state.portfolio_db["item_label"].unique())
+            temp_df = st.session_state.portfolio_db.copy()
+            temp_df["item_label"] = temp_df["종목명"] + " (" + temp_df["계좌"] + ")"
+            del_item_target = st.selectbox("삭제할 항목 선택", options=temp_df["item_label"].unique())
             
             if st.button("보유 종목 삭제", use_container_width=True):
-                st.session_state.portfolio_db = st.session_state.portfolio_db[
-                    st.session_state.portfolio_db["item_label"] != del_item_target
-                ].drop(columns=["item_label"]).reset_index(drop=True)
-                st.success("선택한 보유 종목이 삭제되었습니다.")
+                selected_idx = temp_df[temp_df["item_label"] == del_item_target].index
+                st.session_state.portfolio_db = st.session_state.portfolio_db.drop(selected_idx).reset_index(drop=True)
+                st.success("선택한 종목 삭제 완료!")
                 st.rerun()
         else:
             st.write("삭제할 보유 종목이 없습니다.")
 
 # =====================================================================
-# 4. 상단 네비게이션 & 메인 대시보드
+# 5. 메인 대시보드 화면
 # =====================================================================
 col_brand, col_banner = st.columns([1, 3])
 
@@ -198,9 +256,6 @@ with col_banner:
     </div>
     ''', unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------
-# 메인 탭 구성
-# ---------------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 종목별 & 계좌별 현황", 
     "📑 거래 내역", 
@@ -209,7 +264,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 & 계좌별 보유현황
+# [TAB 1] 종목별 현황 (Grid Card) & 계좌별 보유현황
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -225,7 +280,7 @@ with tab1:
         }).reset_index()
         grouped_stock["수익률"] = (grouped_stock["손익"] / grouped_stock["매수금액"] * 100).round(2)
         
-        # 4열 그리드 카드
+        # 4열 카드 레이아웃
         cols = st.columns(4)
         for idx, row in grouped_stock.iterrows():
             col_idx = idx % 4
@@ -259,7 +314,6 @@ with tab1:
         st.markdown("---")
         st.subheader("계좌별 보유현황")
         
-        # 계좌별 상세 테이블 (수정된 포맷 문자열 적용)
         for name, group in df.groupby("종목명"):
             with st.expander(f"📦 {name}  |  평가금액: ₩{group['평가금액'].sum():,.0f} ({group['손익'].sum():+,.0f}원)", expanded=True):
                 display_g = group[["계좌", "수량", "평단가", "매수금액", "평가금액", "손익", "수익률", "누적배당"]].copy()
@@ -290,7 +344,7 @@ with tab2:
     }), use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 3] 자산 트렌드
+# [TAB 3] 자산 트렌드 (듀얼 Y축)
 # ---------------------------------------------------------------------
 with tab3:
     st.subheader("자산 트렌드")
