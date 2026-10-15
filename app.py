@@ -121,7 +121,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 비밀번호 설정
-DASHBOARD_PASSWORD = st.secrets.get("DASHBOARD_PASSWORD", "1234")
+DASHBOARD_PASSWORD = st.secrets.get("DASHBOARD_PASSWORD", "1111")
 
 def check_password():
     if "authenticated" not in st.session_state:
@@ -521,13 +521,19 @@ with tab3:
     st.plotly_chart(fig_trend, use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 4] 배당금 현황
+# [TAB 4] 배당금 현황 (길이 불일치 오류 수정 완료)
 # ---------------------------------------------------------------------
 with tab4:
     st.subheader("배당금 현황")
-    m_labels = [f"24/{m:02d}" for m in range(1, 13)] + [f"25/{m:02d}" for m in range(1, 13)] + ["26/01", "26/02", "26/03"]
-    m_divs = [200000, 250000, 300000, 280000, 450000, 420000, 430000, 410000, 480000, 500000, 520000, 550000,
-              480000, 510000, 530000, 720000, 680000, 650000, 660000, 670000, 850000, 2400000, 1050000, 1800000, 852150]
     
-    fig_div_bar = px.bar(x=m_labels, y=m_divs, labels={'x': '년/월', 'y': '배당 입금액(원)'}, color_discrete_sequence=['#F59E0B'])
+    # 27개 개수로 m_labels와 m_divs 일치화
+    m_labels = [f"24/{m:02d}" for m in range(1, 13)] + [f"25/{m:02d}" for m in range(1, 13)] + ["26/01", "26/02", "26/03"]
+    m_divs = [
+        200000, 250000, 300000, 280000, 450000, 420000, 430000, 410000, 480000, 500000, 520000, 550000, # 2024년 (12개)
+        480000, 510000, 530000, 720000, 680000, 650000, 660000, 670000, 850000, 2400000, 1050000, 1800000, # 2025년 (12개)
+        1115734, 1876660, 852150 # 2026년 (3개) -> 총 27개로 일치
+    ]
+    
+    df_div = pd.DataFrame({"년/월": m_labels, "배당 입금액(원)": m_divs})
+    fig_div_bar = px.bar(df_div, x="년/월", y="배당 입금액(원)", color_discrete_sequence=['#F59E0B'])
     st.plotly_chart(fig_div_bar, use_container_width=True)
