@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 
 # =====================================================================
-# 1. 페이지 설정 및 초미니 버튼 CSS
+# 1. 페이지 설정 및 완벽한 무테두리 미니 아이콘 CSS
 # =====================================================================
 st.set_page_config(
     page_title="개인 금융자산 포트폴리오 대시보드",
@@ -41,9 +41,9 @@ STOCK_SEARCH_DICT = {
     "리얼티인컴": "O"
 }
 
-# 강제 초미니 무테두리 버튼 CSS
 st.markdown("""
 <style>
+    /* 헤더 */
     .dashboard-header {
         background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
         border-radius: 12px;
@@ -65,6 +65,7 @@ st.markdown("""
         margin-top: 4px;
     }
 
+    /* 요약 바 */
     .summary-banner {
         background-color: var(--background-secondary-color, #F8FAFC);
         border: 1px solid var(--border-color, #E2E8F0);
@@ -84,16 +85,18 @@ st.markdown("""
     .summary-profit-plus { font-weight: 700; color: #EF4444 !important; }
     .summary-profit-minus { font-weight: 700; color: #3B82F6 !important; }
 
+    /* 종목 카드 컨테이너 */
     .stock-card {
         background-color: var(--background-secondary-color, #FFFFFF);
         border: 1px solid var(--border-color, #E2E8F0);
         border-radius: 10px;
-        padding: 12px 14px;
-        margin-bottom: 8px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        position: relative;
     }
     .stock-title { 
-        font-size: 14px; 
+        font-size: 15px; 
         font-weight: 700; 
         color: var(--text-color, #0F172A) !important; 
     }
@@ -115,25 +118,31 @@ st.markdown("""
     .card-profit-plus { font-size: 12px; font-weight: 700; color: #EF4444 !important; }
     .card-profit-minus { font-size: 12px; font-weight: 700; color: #3B82F6 !important; }
 
-    /* [핵심] 테두리와 큰 박스를 완벽히 제거한 오른쪽 끝 초밀착 텍스트 버튼 스타일 */
-    div[data-testid="column"] button[kind="secondary"] {
+    /* [완벽 해결] 버튼 테두리 박스와 배경을 100% 지우고 텍스트 아이콘만 우측 상단 밀착 */
+    div[data-testid="column"] button {
         background: transparent !important;
         background-color: transparent !important;
         border: none !important;
+        border-radius: 0px !important;
         box-shadow: none !important;
         outline: none !important;
-        padding: 0px 2px !important;
+        padding: 0px !important;
         margin: 0px !important;
-        min-height: 16px !important;
-        height: 16px !important;
-        width: 16px !important;
-        min-width: 16px !important;
-        font-size: 10px !important;
-        color: #94A3B8 !important;
+        font-size: 11px !important;
+        font-weight: bold !important;
+        color: #64748B !important;
+        cursor: pointer !important;
     }
-    div[data-testid="column"] button[kind="secondary"]:hover {
+    div[data-testid="column"] button:hover {
         color: #2563EB !important;
         background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="column"] button:focus {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -223,7 +232,7 @@ def fetch_realtime_market_data(ticker_list: tuple):
     return price_data, usd_krw
 
 # =====================================================================
-# 3. 데이터베이스 및 세션 상태 초기화
+# 3. 데이터베이스 초기화
 # =====================================================================
 if "account_list" not in st.session_state:
     st.session_state.account_list = [
@@ -281,7 +290,7 @@ total_profit = total_eval - total_buy
 total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 
 # =====================================================================
-# 4. 사이드바 메뉴
+# 4. 사이드바
 # =====================================================================
 with st.sidebar:
     st.header("⚙️ 포트폴리오 설정")
@@ -343,7 +352,7 @@ with st.sidebar:
                 st.rerun()
 
 # =====================================================================
-# 5. 헤더 타이틀
+# 5. 메인 헤더
 # =====================================================================
 st.markdown('''
 <div class="dashboard-header">
@@ -372,7 +381,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (오른쪽 끝 완벽 밀착 초미니 무테두리 버튼)
+# [TAB 1] 종목별 현황 (우측 밀착 초미니 무테두리 아이콘 전용)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -433,11 +442,10 @@ with tab1:
             profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
             
             with cols[col_idx]:
-                # [개선 핵심] 4개 아이콘을 오른쪽으로 완전히 밀착시킨 초미니 컬럼 구조
-                c_space, c_up, c_down, c_edit, c_del = st.columns([12, 1, 1, 1, 1])
-                
-                with c_up:
-                    if st.button("↑", key=f"u_{name}", help="위로"):
+                # [개선 핵심] 카드 우측 상단 끝에 바짝 붙는 4개 텍스트 아이콘 (테두리 100% 제거)
+                btn_cols = st.columns([15, 1, 1, 1, 1])
+                with btn_cols[1]:
+                    if st.button("▲", key=f"u_{name}", help="위로"):
                         if idx > 0:
                             prev_name = unique_stocks[idx-1]
                             idx_a = df[df["종목명"] == name].index
@@ -445,8 +453,8 @@ with tab1:
                             new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with c_down:
-                    if st.button("↓", key=f"d_{name}", help="아래로"):
+                with btn_cols[2]:
+                    if st.button("▼", key=f"d_{name}", help="아래로"):
                         if idx < len(unique_stocks) - 1:
                             next_name = unique_stocks[idx+1]
                             idx_a = df[df["종목명"] == name].index
@@ -454,17 +462,18 @@ with tab1:
                             new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with c_edit:
+                with btn_cols[3]:
                     if st.button("✏", key=f"e_{name}", help="수정"):
                         st.session_state.editing_stock = name
                         st.rerun()
-                with c_del:
+                with btn_cols[4]:
                     if st.button("✕", key=f"x_{name}", help="삭제"):
                         st.session_state.portfolio_db = st.session_state.portfolio_db[
                             st.session_state.portfolio_db["종목명"] != name
                         ].reset_index(drop=True)
                         st.rerun()
 
+                # 카드 본문 내용
                 st.markdown(f'''
                 <div class="stock-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
