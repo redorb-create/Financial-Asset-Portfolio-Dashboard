@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 
 # =====================================================================
-# 1. 페이지 설정 및 다크모드 대응 반응형 CSS
+# 1. 페이지 설정 및 초미니 버튼 CSS
 # =====================================================================
 st.set_page_config(
     page_title="개인 금융자산 포트폴리오 대시보드",
@@ -16,7 +16,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# 제1금융권 및 주요 증권사 목록 정의
 FINANCIAL_INSTITUTIONS = [
     "미래에셋증권", "한국투자증권", "NH투자증권", "삼성증권", "KB증권", "신한투자증권", "키움증권", "토스증권",
     "KB국민은행", "신한은행", "하나은행", "우리은행", "NH농협은행", "IBK기업은행", "Sh수협은행", "iM뱅크(대구)"
@@ -24,7 +23,6 @@ FINANCIAL_INSTITUTIONS = [
 
 ACCOUNT_TYPES = ["일반위탁", "연금저축", "IRP", "퇴직연금(DC)", "입출금통장"]
 
-# 인기 종목 한글명 - 티커 매핑 사전 (종목명 검색 지원)
 STOCK_SEARCH_DICT = {
     "삼성전자": "005930.KS",
     "SK하이닉스": "000660.KS",
@@ -43,6 +41,7 @@ STOCK_SEARCH_DICT = {
     "리얼티인컴": "O"
 }
 
+# 강제 초미니 무테두리 버튼 CSS
 st.markdown("""
 <style>
     .dashboard-header {
@@ -116,28 +115,23 @@ st.markdown("""
     .card-profit-plus { font-size: 12px; font-weight: 700; color: #EF4444 !important; }
     .card-profit-minus { font-size: 12px; font-weight: 700; color: #3B82F6 !important; }
 
-    /* [요구사항 1] 상단 테두리 없는 초미니 아이콘 버튼 (오른쪽 밀착 정렬) */
-    .mini-btn-group {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: 0px !important;
-        margin-bottom: 2px;
-    }
-    .mini-btn-group .stButton > button {
-        border: none !important;
+    /* [핵심] 테두리와 큰 박스를 완벽히 제거한 오른쪽 끝 초밀착 텍스트 버튼 스타일 */
+    div[data-testid="column"] button[kind="secondary"] {
         background: transparent !important;
         background-color: transparent !important;
+        border: none !important;
         box-shadow: none !important;
-        color: var(--text-color-secondary, #64748B) !important;
+        outline: none !important;
         padding: 0px 2px !important;
-        font-size: 10px !important;
-        line-height: 12px !important;
-        height: 16px !important;
+        margin: 0px !important;
         min-height: 16px !important;
+        height: 16px !important;
         width: 16px !important;
+        min-width: 16px !important;
+        font-size: 10px !important;
+        color: #94A3B8 !important;
     }
-    .mini-btn-group .stButton > button:hover {
+    div[data-testid="column"] button[kind="secondary"]:hover {
         color: #2563EB !important;
         background: transparent !important;
     }
@@ -171,7 +165,7 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. [요구사항 2] 실시간 시세 및 자동 배당금 수집 모듈 (네이버/야후)
+# 2. 실시간 시세 수집 엔진
 # =====================================================================
 @st.cache_data(ttl=30)
 def fetch_realtime_market_data(ticker_list: tuple):
@@ -194,7 +188,6 @@ def fetch_realtime_market_data(ticker_list: tuple):
         dps = 0.0
         is_usd = not symbol.endswith((".KS", ".KQ"))
         
-        # 한국 주식/ETF
         if symbol.endswith((".KS", ".KQ")):
             code = re.sub(r'[^0-9]', '', symbol)
             url = f"https://m.stock.naver.com/api/stock/{code}/basic"
@@ -203,12 +196,10 @@ def fetch_realtime_market_data(ticker_list: tuple):
                 if res.status_code == 200:
                     data = res.json()
                     curr_price = float(data.get('nowVal', '0').replace(',', ''))
-                    # 네이버 배당금 정보 추출 시도
                     dps = float(data.get('dps', '0').replace(',', '')) if data.get('dps') else 0.0
             except Exception:
                 curr_price = 0.0
 
-        # 미국 주식 및 yfinance 백업
         if curr_price == 0.0 or dps == 0.0:
             try:
                 t = yf.Ticker(symbol)
@@ -218,7 +209,6 @@ def fetch_realtime_market_data(ticker_list: tuple):
                         hist = t.history(period="1d")
                         if not hist.empty:
                             curr_price = hist['Close'].iloc[-1]
-                # 배당금 조회
                 if dps == 0.0:
                     dps = float(t.info.get('dividendRate', 0.0) or 0.0)
             except Exception:
@@ -257,7 +247,6 @@ if "portfolio_db" not in st.session_state:
 if "editing_stock" not in st.session_state:
     st.session_state.editing_stock = None
 
-# 실시간 주가 및 배당금 반영
 if not st.session_state.portfolio_db.empty:
     tickers = tuple(st.session_state.portfolio_db["티커"].unique())
     realtime_prices, current_usd_krw = fetch_realtime_market_data(tickers)
@@ -292,7 +281,7 @@ total_profit = total_eval - total_buy
 total_rate = (total_profit / total_buy * 100) if total_buy > 0 else 0.0
 
 # =====================================================================
-# 4. 사이드바 - [요구사항 5, 6] 금융기관 선택 및 종목/티커 검색등록
+# 4. 사이드바 메뉴
 # =====================================================================
 with st.sidebar:
     st.header("⚙️ 포트폴리오 설정")
@@ -304,7 +293,6 @@ with st.sidebar:
         
     st.markdown("---")
     
-    # [요구사항 5] 제1금융기관/증권사 드롭다운 선택으로 계좌 추가
     with st.expander("🏦 계좌 관리 (제1금융/증권사 선택)"):
         st.subheader("신규 계좌 추가")
         selected_bank = st.selectbox("금융기관 선택", FINANCIAL_INSTITUTIONS)
@@ -330,14 +318,10 @@ with st.sidebar:
             st.success(f"'{del_acc_target}' 삭제 완료!")
             st.rerun()
 
-    # [요구사항 6] 종목명 및 티커 검색등록 기능
     with st.expander("📌 종목 검색 및 보유내역 추가"):
         with st.form("add_item_form"):
             in_acc = st.selectbox("계좌 선택", options=st.session_state.account_list)
-            
             search_query = st.text_input("종목명 또는 티커 검색 (예: 삼성전자, NVDA, 069500.KS)", "PLUS 고배당주")
-            
-            # 검색 매핑 자동 변환
             auto_ticker = STOCK_SEARCH_DICT.get(search_query.strip(), search_query.strip())
             st.caption(f"자동 매핑 티커: **{auto_ticker}**")
             
@@ -359,7 +343,7 @@ with st.sidebar:
                 st.rerun()
 
 # =====================================================================
-# 5. 메인 헤더
+# 5. 헤더 타이틀
 # =====================================================================
 st.markdown('''
 <div class="dashboard-header">
@@ -379,7 +363,6 @@ st.markdown(f'''
 </div>
 ''', unsafe_allow_html=True)
 
-# [요구사항 4] 별도 탭: 투자리포트 탭 포함 5개 메인 탭
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 종목별 & 계좌별 현황", 
     "📑 거래 내역", 
@@ -389,7 +372,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (요구사항 1: 무테두리 초미니 우측 밀착 버튼)
+# [TAB 1] 종목별 현황 (오른쪽 끝 완벽 밀착 초미니 무테두리 버튼)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -450,11 +433,11 @@ with tab1:
             profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
             
             with cols[col_idx]:
-                # [요구사항 1] 상단 테두리 없는 초미니 아이콘 버튼 (오른쪽 정렬)
-                st.markdown('<div class="mini-btn-group">', unsafe_allow_html=True)
-                mb1, mb2, mb3, mb4 = st.columns([1, 1, 1, 1])
-                with mb1:
-                    if st.button("⬆", key=f"up_{name}", help="위로 이동"):
+                # [개선 핵심] 4개 아이콘을 오른쪽으로 완전히 밀착시킨 초미니 컬럼 구조
+                c_space, c_up, c_down, c_edit, c_del = st.columns([12, 1, 1, 1, 1])
+                
+                with c_up:
+                    if st.button("↑", key=f"u_{name}", help="위로"):
                         if idx > 0:
                             prev_name = unique_stocks[idx-1]
                             idx_a = df[df["종목명"] == name].index
@@ -462,8 +445,8 @@ with tab1:
                             new_df = pd.concat([df.loc[idx_a], df.loc[idx_b], df.drop(idx_a.union(idx_b))]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with mb2:
-                    if st.button("⬇", key=f"down_{name}", help="아래로 이동"):
+                with c_down:
+                    if st.button("↓", key=f"d_{name}", help="아래로"):
                         if idx < len(unique_stocks) - 1:
                             next_name = unique_stocks[idx+1]
                             idx_a = df[df["종목명"] == name].index
@@ -471,17 +454,16 @@ with tab1:
                             new_df = pd.concat([df.drop(idx_a.union(idx_b)), df.loc[idx_b], df.loc[idx_a]]).reset_index(drop=True)
                             st.session_state.portfolio_db = new_df
                             st.rerun()
-                with mb3:
-                    if st.button("✏", key=f"edit_{name}", help="수정"):
+                with c_edit:
+                    if st.button("✏", key=f"e_{name}", help="수정"):
                         st.session_state.editing_stock = name
                         st.rerun()
-                with mb4:
-                    if st.button("✕", key=f"del_{name}", help="삭제"):
+                with c_del:
+                    if st.button("✕", key=f"x_{name}", help="삭제"):
                         st.session_state.portfolio_db = st.session_state.portfolio_db[
                             st.session_state.portfolio_db["종목명"] != name
                         ].reset_index(drop=True)
                         st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
                 st.markdown(f'''
                 <div class="stock-card">
@@ -539,13 +521,12 @@ with tab2:
     }), use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 3] [요구사항 3] 자산 트렌드 (Plotly 검증 완료)
+# [TAB 3] 자산 트렌드
 # ---------------------------------------------------------------------
 with tab3:
     st.subheader("자산 트렌드")
     period_sel = st.radio("기간 선택", ["최근 1개월", "최근 3개월", "최근 6개월", "최근 1년", "최근 3년", "최근 5년", "전체기간"], index=2, horizontal=True)
     
-    # 선택 기간별 일수
     days_dict = {"최근 1개월": 30, "최근 3개월": 90, "최근 6개월": 180, "최근 1년": 365, "최근 3년": 1095, "최근 5년": 1825, "전체기간": 2500}
     num_days = days_dict.get(period_sel, 180)
     
@@ -593,7 +574,7 @@ with tab4:
     st.plotly_chart(fig_div_bar, use_container_width=True)
 
 # ---------------------------------------------------------------------
-# [TAB 5] [요구사항 4] 별도 탭: 투자리포트 (일별, 주간, 월간, 분기, 반기, 연간)
+# [TAB 5] 투자리포트
 # ---------------------------------------------------------------------
 with tab5:
     st.subheader("📊 기간별 포트폴리오 투자리포트")
@@ -603,7 +584,6 @@ with tab5:
         options=["일별 (1D)", "주간 (1W)", "월간 (1M)", "분기 (1Q)", "반기 (2Q)", "연간 (1Y)"]
     )
     
-    # 기간별 리포트 데이터 시뮬레이션 산출
     rpt_multiplier = {
         "일별 (1D)": 0.002, "주간 (1W)": 0.008, "월간 (1M)": 0.024, 
         "분기 (1Q)": 0.048, "반기 (2Q)": 0.082, "연간 (1Y)": 0.154
