@@ -1,6 +1,0 @@
-Plaintext
-
-streamlit
-pandas
-yfinance
-plotly
