@@ -80,37 +80,52 @@ def check_password():
 check_password()
 
 # =====================================================================
-# 2. 실시간 시세 및 환율 조회 모듈 (yfinance)
+# 2. 실시간 시세 및 환율 조회 모듈 (오류 방지 강화 버전)
 # =====================================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)  # 캐시 주기를 30초로 단축
 def fetch_realtime_market_data(ticker_list: tuple):
-    """
-    yfinance 기반 실시간 현재가 및 USD/KRW 환율 일괄 조회
-    """
     price_data = {}
+    
+    # 1. 실시간 환율 조회 (USD/KRW)
     try:
         usd_krw_ticker = yf.Ticker("KRW=X")
-        usd_krw = float(usd_krw_ticker.fast_info['lastPrice'])
+        usd_krw = float(usd_krw_ticker.fast_info.get('lastPrice', 0))
+        if usd_krw == 0:
+            hist_krw = usd_krw_ticker.history(period="2d")
+            usd_krw = float(hist_krw['Close'].iloc[-1])
     except Exception:
-        usd_krw = 1350.0
+        usd_krw = 1350.0  # 기본값
 
+    # 2. 종목별 실시간 주가 수집
     for symbol in set(ticker_list):
         if not symbol or symbol == "-":
             continue
         try:
             t = yf.Ticker(symbol)
-            curr_price = t.fast_info.get('lastPrice')
-            if curr_price is None or pd.isna(curr_price):
-                hist = t.history(period="1d")
-                curr_price = hist['Close'].iloc[-1] if not hist.empty else 0.0
+            curr_price = None
             
+            # [방법 1] fast_info 조회 시도
+            try:
+                curr_price = t.fast_info.get('lastPrice')
+            except Exception:
+                curr_price = None
+
+            # [방법 2] fast_info 실패 시 history(1d) 다이렉트 수집 (한국 주식 호환성 강화)
+            if curr_price is None or pd.isna(curr_price) or curr_price == 0:
+                hist = t.history(period="5d")
+                if not hist.empty:
+                    curr_price = hist['Close'].iloc[-1]
+                else:
+                    curr_price = 0.0
+
+            is_usd = not symbol.endswith((".KS", ".KQ"))
             price_data[symbol] = {
                 "현재가": float(curr_price),
-                "통화": "USD" if not symbol.endswith((".KS", ".KQ")) else "KRW"
+                "통화": "USD" if is_usd else "KRW"
             }
         except Exception:
             price_data[symbol] = {"현재가": 0.0, "통화": "KRW"}
-            
+
     return price_data, usd_krw
 
 # =====================================================================
