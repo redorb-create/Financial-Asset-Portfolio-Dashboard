@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 
 # =====================================================================
-# 1. 페이지 설정 및 완벽한 무테두리 미니 아이콘 CSS
+# 1. 페이지 설정 및 미니 픽토그램 버튼 CSS
 # =====================================================================
 st.set_page_config(
     page_title="개인 금융자산 포트폴리오 대시보드",
@@ -41,9 +41,9 @@ STOCK_SEARCH_DICT = {
     "리얼티인컴": "O"
 }
 
+# 미니 픽토그램 전용 무테두리 CSS
 st.markdown("""
 <style>
-    /* 헤더 */
     .dashboard-header {
         background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
         border-radius: 12px;
@@ -65,7 +65,6 @@ st.markdown("""
         margin-top: 4px;
     }
 
-    /* 요약 바 */
     .summary-banner {
         background-color: var(--background-secondary-color, #F8FAFC);
         border: 1px solid var(--border-color, #E2E8F0);
@@ -85,18 +84,16 @@ st.markdown("""
     .summary-profit-plus { font-weight: 700; color: #EF4444 !important; }
     .summary-profit-minus { font-weight: 700; color: #3B82F6 !important; }
 
-    /* 종목 카드 컨테이너 */
     .stock-card {
         background-color: var(--background-secondary-color, #FFFFFF);
         border: 1px solid var(--border-color, #E2E8F0);
         border-radius: 10px;
-        padding: 14px 16px;
+        padding: 12px 14px;
         margin-bottom: 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        position: relative;
     }
     .stock-title { 
-        font-size: 15px; 
+        font-size: 14px; 
         font-weight: 700; 
         color: var(--text-color, #0F172A) !important; 
     }
@@ -118,7 +115,7 @@ st.markdown("""
     .card-profit-plus { font-size: 12px; font-weight: 700; color: #EF4444 !important; }
     .card-profit-minus { font-size: 12px; font-weight: 700; color: #3B82F6 !important; }
 
-    /* [완벽 해결] 버튼 테두리 박스와 배경을 100% 지우고 텍스트 아이콘만 우측 상단 밀착 */
+    /* 무테두리 픽토그램 버튼 전용 스타일 */
     div[data-testid="column"] button {
         background: transparent !important;
         background-color: transparent !important;
@@ -128,18 +125,12 @@ st.markdown("""
         outline: none !important;
         padding: 0px !important;
         margin: 0px !important;
-        font-size: 11px !important;
-        font-weight: bold !important;
+        font-size: 13px !important;
         color: #64748B !important;
         cursor: pointer !important;
     }
     div[data-testid="column"] button:hover {
         color: #2563EB !important;
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-    }
-    div[data-testid="column"] button:focus {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -303,23 +294,23 @@ with st.sidebar:
     st.markdown("---")
     
     with st.expander("🏦 계좌 관리 (제1금융/증권사 선택)"):
-        st.subheader("신규 계좌 추가")
+        st.subheader("➕ 신규 계좌 추가")
         selected_bank = st.selectbox("금융기관 선택", FINANCIAL_INSTITUTIONS)
         selected_type = st.selectbox("계좌 종류", ACCOUNT_TYPES)
         
         custom_acc_full_name = f"{selected_bank} {selected_type}"
         st.caption(f"등록될 계좌명: **{custom_acc_full_name}**")
         
-        if st.button("계좌 등록", use_container_width=True):
+        if st.button("➕ 계좌 등록", use_container_width=True):
             if custom_acc_full_name not in st.session_state.account_list:
                 st.session_state.account_list.append(custom_acc_full_name)
                 st.success(f"'{custom_acc_full_name}' 계좌 추가 완료!")
                 st.rerun()
                 
         st.markdown("---")
-        st.subheader("계좌 삭제")
+        st.subheader("🗑️ 계좌 삭제")
         del_acc_target = st.selectbox("삭제할 계좌 선택", options=st.session_state.account_list)
-        if st.button("선택 계좌 삭제", use_container_width=True):
+        if st.button("🗑️ 선택 계좌 삭제", use_container_width=True):
             st.session_state.account_list.remove(del_acc_target)
             st.session_state.portfolio_db = st.session_state.portfolio_db[
                 st.session_state.portfolio_db["계좌"] != del_acc_target
@@ -338,7 +329,7 @@ with st.sidebar:
             in_avg = st.number_input("평단가(원)", min_value=0, value=20000)
             in_div = st.number_input("누적 배당금(원)", min_value=0, value=0)
             
-            if st.form_submit_button("보유 종목 저장", use_container_width=True):
+            if st.form_submit_button("➕ 보유 종목 저장", use_container_width=True):
                 buy_amt = in_qty * in_avg
                 new_row = pd.DataFrame([{
                     "종목명": search_query.strip(), "티커": auto_ticker, "계좌": in_acc,
@@ -381,7 +372,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ---------------------------------------------------------------------
-# [TAB 1] 종목별 현황 (우측 밀착 초미니 무테두리 아이콘 전용)
+# [TAB 1] 종목별 현황 (상단 픽토그램 아이콘 버튼: ▲, ▼, ✏️, 🗑️)
 # ---------------------------------------------------------------------
 with tab1:
     st.subheader("종목별 현황")
@@ -405,7 +396,7 @@ with tab1:
                 
                 c_btn1, c_btn2 = st.columns(2)
                 with c_btn1:
-                    if st.form_submit_button("저장", use_container_width=True):
+                    if st.form_submit_button("💾 저장", use_container_width=True):
                         for i in stock_rows.index:
                             st.session_state.portfolio_db.at[i, "종목명"] = e_name
                             st.session_state.portfolio_db.at[i, "티커"] = e_ticker
@@ -421,7 +412,7 @@ with tab1:
                         st.success("수정 완료되었습니다.")
                         st.rerun()
                 with c_btn2:
-                    if st.form_submit_button("취소", use_container_width=True):
+                    if st.form_submit_button("❌ 취소", use_container_width=True):
                         st.session_state.editing_stock = None
                         st.rerun()
             st.markdown("---")
@@ -442,10 +433,10 @@ with tab1:
             profit_class = "card-profit-plus" if sum_profit >= 0 else "card-profit-minus"
             
             with cols[col_idx]:
-                # [개선 핵심] 카드 우측 상단 끝에 바짝 붙는 4개 텍스트 아이콘 (테두리 100% 제거)
-                btn_cols = st.columns([15, 1, 1, 1, 1])
+                # 픽토그램 아이콘 버튼 (▲: 위로, ▼: 아래로, ✏️: 편집, 🗑️: 삭제)
+                btn_cols = st.columns([12, 1, 1, 1, 1])
                 with btn_cols[1]:
-                    if st.button("▲", key=f"u_{name}", help="위로"):
+                    if st.button("▲", key=f"u_{name}", help="위로 이동"):
                         if idx > 0:
                             prev_name = unique_stocks[idx-1]
                             idx_a = df[df["종목명"] == name].index
@@ -454,7 +445,7 @@ with tab1:
                             st.session_state.portfolio_db = new_df
                             st.rerun()
                 with btn_cols[2]:
-                    if st.button("▼", key=f"d_{name}", help="아래로"):
+                    if st.button("▼", key=f"d_{name}", help="아래로 이동"):
                         if idx < len(unique_stocks) - 1:
                             next_name = unique_stocks[idx+1]
                             idx_a = df[df["종목명"] == name].index
@@ -463,17 +454,16 @@ with tab1:
                             st.session_state.portfolio_db = new_df
                             st.rerun()
                 with btn_cols[3]:
-                    if st.button("✏", key=f"e_{name}", help="수정"):
+                    if st.button("✏️", key=f"e_{name}", help="편집"):
                         st.session_state.editing_stock = name
                         st.rerun()
                 with btn_cols[4]:
-                    if st.button("✕", key=f"x_{name}", help="삭제"):
+                    if st.button("🗑️", key=f"x_{name}", help="삭제"):
                         st.session_state.portfolio_db = st.session_state.portfolio_db[
                             st.session_state.portfolio_db["종목명"] != name
                         ].reset_index(drop=True)
                         st.rerun()
 
-                # 카드 본문 내용
                 st.markdown(f'''
                 <div class="stock-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
